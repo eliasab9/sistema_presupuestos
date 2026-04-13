@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Desktop_Commander__list_directory",
+      "Bash(pnpm install:*)",
+      "Bash(npm install:*)",
+      "Bash(sudo npm:*)",
+      "Bash(npm -v)",
+      "Read(//usr/local/bin/**)",
+      "Read(//Users/eliasagustin/.local/share/pnpm/**)",
+      "Read(//Users/eliasagustin/Library/pnpm/**)",
+      "mcp__Claude_Preview__preview_start"
+    ]
+  }
+}

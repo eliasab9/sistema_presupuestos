@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "app/api/google-drive/upload/route.ts": {
+      "maxDuration": 30
+    }
+  }
+}

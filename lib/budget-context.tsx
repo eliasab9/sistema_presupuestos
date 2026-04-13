@@ -1,0 +1,408 @@
+'use client';
+
+import { createContext, useContext, useReducer, useCallback, useEffect, type ReactNode } from 'react';
+import type { 
+  Budget, 
+  BudgetMeta, 
+  Customer, 
+  Equipment, 
+  WorkItem, 
+  BearingItem, 
+  SparePartItem, 
+  MachiningItem, 
+  LaborItem, 
+  TaxLine,
+  EquipmentType,
+  CompanyId,
+} from '@/types/budget';
+import { generateBudgetNumber, formatDate, addDays, calculateSubtotals } from '@/lib/pricing/calculations';
+import { getLastBudgetNumber, saveDraft, loadDraft } from '@/lib/storage/budgets';
+import { fetchNextBudgetNumber } from '@/lib/delivery/sheets-service';
+
+// Initial empty budget state
+function createInitialBudget(): Budget {
+  const today = new Date();
+  const lastNumber = typeof window !== 'undefined' ? getLastBudgetNumber() : '7142';
+  
+  return {
+    id: crypto.randomUUID(),
+    companyId: 'bemec' as CompanyId,
+    meta: {
+      number: generateBudgetNumber(lastNumber),
+      date: formatDate(today),
+      validUntil: formatDate(addDays(today, 7)),
+      exchangeRate: 1200,
+      currency: 'ARS',
+      paymentTerms: 'A convenir',
+      commercialValidity: '7 días hábiles',
+      generalNotes: '',
+      responsable: 'Elías',
+    },
+    customer: {},
+    equipment: {
+      type: 'electrobomba_centrifuga',
+      power: 1,
+      quantity: 1,
+    },
+    workItems: [],
+    bearings: [],
+    spareParts: [],
+    machining: [],
+    labor: [],
+    taxes: [],
+    subtotalLabor: 0,
+    subtotalBearings: 0,
+    subtotalSpareParts: 0,
+    subtotalMachining: 0,
+    subtotalGeneral: 0,
+    totalTax: 0,
+    totalFinal: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// Action types
+type BudgetAction =
+  | { type: 'SET_COMPANY'; payload: CompanyId }
+  | { type: 'SET_META'; payload: Partial<BudgetMeta> }
+  | { type: 'SET_CUSTOMER'; payload: Partial<Customer> }
+  | { type: 'SET_EQUIPMENT'; payload: Partial<Equipment> }
+  | { type: 'ADD_WORK_ITEM'; payload: WorkItem }
+  | { type: 'UPDATE_WORK_ITEM'; payload: { id: string; updates: Partial<WorkItem> } }
+  | { type: 'REMOVE_WORK_ITEM'; payload: string }
+  | { type: 'REORDER_WORK_ITEMS'; payload: WorkItem[] }
+  | { type: 'ADD_BEARING'; payload: BearingItem }
+  | { type: 'UPDATE_BEARING'; payload: { id: string; updates: Partial<BearingItem> } }
+  | { type: 'REMOVE_BEARING'; payload: string }
+  | { type: 'ADD_SPARE_PART'; payload: SparePartItem }
+  | { type: 'UPDATE_SPARE_PART'; payload: { id: string; updates: Partial<SparePartItem> } }
+  | { type: 'REMOVE_SPARE_PART'; payload: string }
+  | { type: 'ADD_MACHINING'; payload: MachiningItem }
+  | { type: 'UPDATE_MACHINING'; payload: { id: string; updates: Partial<MachiningItem> } }
+  | { type: 'REMOVE_MACHINING'; payload: string }
+  | { type: 'ADD_LABOR'; payload: LaborItem }
+  | { type: 'UPDATE_LABOR'; payload: { id: string; updates: Partial<LaborItem> } }
+  | { type: 'REMOVE_LABOR'; payload: string }
+  | { type: 'SET_LABOR'; payload: LaborItem[] }
+  | { type: 'RECALCULATE_TOTALS' }
+  | { type: 'SET_SUBTOTALS'; payload: { subtotalLabor: number; subtotalBearings: number; subtotalSpareParts: number; subtotalMachining: number; subtotalGeneral: number } }
+  | { type: 'SET_BUDGET'; payload: Budget }
+  | { type: 'RESET' };
+
+// Reducer
+function budgetReducer(state: Budget, action: BudgetAction): Budget {
+  switch (action.type) {
+    case 'SET_COMPANY':
+      return {
+        ...state,
+        companyId: action.payload,
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'SET_META':
+      return {
+        ...state,
+        meta: { ...state.meta, ...action.payload },
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'SET_CUSTOMER':
+      return {
+        ...state,
+        customer: { ...state.customer, ...action.payload },
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'SET_EQUIPMENT':
+      return {
+        ...state,
+        equipment: { ...state.equipment, ...action.payload },
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'ADD_WORK_ITEM':
+      return {
+        ...state,
+        workItems: [...state.workItems, action.payload],
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'UPDATE_WORK_ITEM':
+      return {
+        ...state,
+        workItems: state.workItems.map(item =>
+          item.id === action.payload.id
+            ? { ...item, ...action.payload.updates }
+            : item
+        ),
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'REMOVE_WORK_ITEM':
+      return {
+        ...state,
+        workItems: state.workItems.filter(item => item.id !== action.payload),
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'REORDER_WORK_ITEMS':
+      return {
+        ...state,
+        workItems: action.payload,
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'ADD_BEARING':
+      return {
+        ...state,
+        bearings: [...state.bearings, action.payload],
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'UPDATE_BEARING':
+      return {
+        ...state,
+        bearings: state.bearings.map(item =>
+          item.id === action.payload.id
+            ? { ...item, ...action.payload.updates }
+            : item
+        ),
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'REMOVE_BEARING':
+      return {
+        ...state,
+        bearings: state.bearings.filter(item => item.id !== action.payload),
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'ADD_SPARE_PART':
+      return {
+        ...state,
+        spareParts: [...state.spareParts, action.payload],
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'UPDATE_SPARE_PART':
+      return {
+        ...state,
+        spareParts: state.spareParts.map(item =>
+          item.id === action.payload.id
+            ? { ...item, ...action.payload.updates }
+            : item
+        ),
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'REMOVE_SPARE_PART':
+      return {
+        ...state,
+        spareParts: state.spareParts.filter(item => item.id !== action.payload),
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'ADD_MACHINING':
+      return {
+        ...state,
+        machining: [...state.machining, action.payload],
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'UPDATE_MACHINING':
+      return {
+        ...state,
+        machining: state.machining.map(item =>
+          item.id === action.payload.id
+            ? { ...item, ...action.payload.updates }
+            : item
+        ),
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'REMOVE_MACHINING':
+      return {
+        ...state,
+        machining: state.machining.filter(item => item.id !== action.payload),
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'ADD_LABOR':
+      return {
+        ...state,
+        labor: [...state.labor, action.payload],
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'UPDATE_LABOR':
+      return {
+        ...state,
+        labor: state.labor.map(item =>
+          item.id === action.payload.id
+            ? { ...item, ...action.payload.updates }
+            : item
+        ),
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'REMOVE_LABOR':
+      return {
+        ...state,
+        labor: state.labor.filter(item => item.id !== action.payload),
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'SET_LABOR':
+      return {
+        ...state,
+        labor: action.payload,
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'SET_SUBTOTALS':
+      return {
+        ...state,
+        ...action.payload,
+        totalFinal: action.payload.subtotalGeneral,
+        updatedAt: new Date().toISOString(),
+      };
+    
+    case 'SET_BUDGET':
+      return action.payload;
+    
+    case 'RESET':
+      return createInitialBudget();
+    
+    default:
+      return state;
+  }
+}
+
+// Context type
+interface BudgetContextType {
+  budget: Budget;
+  setCompany: (companyId: CompanyId) => void;
+  setMeta: (meta: Partial<BudgetMeta>) => void;
+  setCustomer: (customer: Partial<Customer>) => void;
+  setEquipment: (equipment: Partial<Equipment>) => void;
+  addWorkItem: (item: WorkItem) => void;
+  updateWorkItem: (id: string, updates: Partial<WorkItem>) => void;
+  removeWorkItem: (id: string) => void;
+  reorderWorkItems: (items: WorkItem[]) => void;
+  addBearing: (item: BearingItem) => void;
+  updateBearing: (id: string, updates: Partial<BearingItem>) => void;
+  removeBearing: (id: string) => void;
+  addSparePart: (item: SparePartItem) => void;
+  updateSparePart: (id: string, updates: Partial<SparePartItem>) => void;
+  removeSparePart: (id: string) => void;
+  addMachining: (item: MachiningItem) => void;
+  updateMachining: (id: string, updates: Partial<MachiningItem>) => void;
+  removeMachining: (id: string) => void;
+  addLabor: (item: LaborItem) => void;
+  updateLabor: (id: string, updates: Partial<LaborItem>) => void;
+  removeLabor: (id: string) => void;
+  setLabor: (items: LaborItem[]) => void;
+  recalculateTotals: () => void;
+  resetBudget: () => void;
+  loadBudget: (budget: Budget) => void;
+}
+
+const BudgetContext = createContext<BudgetContextType | null>(null);
+
+export function BudgetProvider({ children }: { children: ReactNode }) {
+  const [budget, dispatch] = useReducer(budgetReducer, null, createInitialBudget);
+
+  // Auto-save draft
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      saveDraft(budget);
+    }, 1000);
+    return () => clearTimeout(timeout);
+  }, [budget]);
+
+  // Load draft on mount; if no draft, fetch next number from Sheets
+  useEffect(() => {
+    const draft = loadDraft();
+    if (draft && draft.id) {
+      dispatch({ type: 'SET_BUDGET', payload: draft as Budget });
+    } else {
+      // Fresh budget — obtener el Nº real desde la hoja de cálculo
+      fetchNextBudgetNumber('bemec').then((next) => {
+        if (next) dispatch({ type: 'SET_META', payload: { number: next } });
+      });
+    }
+  }, []);
+
+  const recalculateTotals = useCallback(() => {
+    const totals = calculateSubtotals(
+      budget.labor,
+      budget.bearings,
+      budget.spareParts,
+      budget.machining
+    );
+    dispatch({ type: 'SET_SUBTOTALS', payload: totals });
+  }, [budget.labor, budget.bearings, budget.spareParts, budget.machining]);
+
+  // Recalculate totals when items change
+  useEffect(() => {
+    recalculateTotals();
+  }, [budget.labor, budget.bearings, budget.spareParts, budget.machining, recalculateTotals]);
+
+  const setCompany = useCallback((companyId: CompanyId) => {
+    dispatch({ type: 'SET_COMPANY', payload: companyId });
+    // Al cambiar de empresa, traer el siguiente número de esa empresa
+    fetchNextBudgetNumber(companyId).then((next) => {
+      if (next) dispatch({ type: 'SET_META', payload: { number: next } });
+    });
+  }, []);
+
+  const resetBudget = useCallback(() => {
+    dispatch({ type: 'RESET' });
+    fetchNextBudgetNumber(budget.companyId).then((next) => {
+      if (next) dispatch({ type: 'SET_META', payload: { number: next } });
+    });
+  }, [budget.companyId]);
+
+  const contextValue: BudgetContextType = {
+    budget,
+    setCompany,
+    setMeta: (meta) => dispatch({ type: 'SET_META', payload: meta }),
+    setCustomer: (customer) => dispatch({ type: 'SET_CUSTOMER', payload: customer }),
+    setEquipment: (equipment) => dispatch({ type: 'SET_EQUIPMENT', payload: equipment }),
+    addWorkItem: (item) => dispatch({ type: 'ADD_WORK_ITEM', payload: item }),
+    updateWorkItem: (id, updates) => dispatch({ type: 'UPDATE_WORK_ITEM', payload: { id, updates } }),
+    removeWorkItem: (id) => dispatch({ type: 'REMOVE_WORK_ITEM', payload: id }),
+    reorderWorkItems: (items) => dispatch({ type: 'REORDER_WORK_ITEMS', payload: items }),
+    addBearing: (item) => dispatch({ type: 'ADD_BEARING', payload: item }),
+    updateBearing: (id, updates) => dispatch({ type: 'UPDATE_BEARING', payload: { id, updates } }),
+    removeBearing: (id) => dispatch({ type: 'REMOVE_BEARING', payload: id }),
+    addSparePart: (item) => dispatch({ type: 'ADD_SPARE_PART', payload: item }),
+    updateSparePart: (id, updates) => dispatch({ type: 'UPDATE_SPARE_PART', payload: { id, updates } }),
+    removeSparePart: (id) => dispatch({ type: 'REMOVE_SPARE_PART', payload: id }),
+    addMachining: (item) => dispatch({ type: 'ADD_MACHINING', payload: item }),
+    updateMachining: (id, updates) => dispatch({ type: 'UPDATE_MACHINING', payload: { id, updates } }),
+    removeMachining: (id) => dispatch({ type: 'REMOVE_MACHINING', payload: id }),
+    addLabor: (item) => dispatch({ type: 'ADD_LABOR', payload: item }),
+    updateLabor: (id, updates) => dispatch({ type: 'UPDATE_LABOR', payload: { id, updates } }),
+    removeLabor: (id) => dispatch({ type: 'REMOVE_LABOR', payload: id }),
+    setLabor: (items) => dispatch({ type: 'SET_LABOR', payload: items }),
+    recalculateTotals,
+    resetBudget,
+    loadBudget: (newBudget) => dispatch({ type: 'SET_BUDGET', payload: newBudget }),
+  };
+
+  return (
+    <BudgetContext.Provider value={contextValue}>
+      {children}
+    </BudgetContext.Provider>
+  );
+}
+
+export function useBudget() {
+  const context = useContext(BudgetContext);
+  if (!context) {
+    throw new Error('useBudget must be used within a BudgetProvider');
+  }
+  return context;
+}
