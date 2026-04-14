@@ -147,18 +147,34 @@ export interface BudgetMeta {
   responsable?: string; // Quien realiza el presupuesto
 }
 
-// Complete budget
-export interface Budget {
+// Repair section — one per equipment item in a multi-equipment budget
+export interface RepairSection {
   id: string;
-  companyId: CompanyId;
-  meta: BudgetMeta;
-  customer: Partial<Customer>;
+  label: string;
   equipment: Equipment;
   workItems: WorkItem[];
   bearings: BearingItem[];
   spareParts: SparePartItem[];
   machining: MachiningItem[];
   labor: LaborItem[];
+}
+
+// Complete budget
+export interface Budget {
+  id: string;
+  companyId: CompanyId;
+  meta: BudgetMeta;
+  customer: Partial<Customer>;
+  // Active section data (flat, for form binding)
+  equipment: Equipment;
+  workItems: WorkItem[];
+  bearings: BearingItem[];
+  spareParts: SparePartItem[];
+  machining: MachiningItem[];
+  labor: LaborItem[];
+  // Multi-section support
+  allSections: RepairSection[];
+  activeSectionIdx: number;
   taxes: TaxLine[];
   subtotalLabor: number;
   subtotalBearings: number;

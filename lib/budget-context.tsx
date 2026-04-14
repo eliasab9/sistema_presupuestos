@@ -1,29 +1,47 @@
 'use client';
 
 import { createContext, useContext, useReducer, useCallback, useEffect, type ReactNode } from 'react';
-import type { 
-  Budget, 
-  BudgetMeta, 
-  Customer, 
-  Equipment, 
-  WorkItem, 
-  BearingItem, 
-  SparePartItem, 
-  MachiningItem, 
-  LaborItem, 
+import type {
+  Budget,
+  BudgetMeta,
+  Customer,
+  Equipment,
+  WorkItem,
+  BearingItem,
+  SparePartItem,
+  MachiningItem,
+  LaborItem,
   TaxLine,
   EquipmentType,
   CompanyId,
+  RepairSection,
 } from '@/types/budget';
 import { generateBudgetNumber, formatDate, addDays, calculateSubtotals } from '@/lib/pricing/calculations';
 import { getLastBudgetNumber, saveDraft, loadDraft } from '@/lib/storage/budgets';
 import { fetchNextBudgetNumber } from '@/lib/delivery/sheets-service';
 
+// Helper: save active flat arrays into allSections[activeSectionIdx]
+function syncActiveSection(state: Budget): RepairSection[] {
+  return state.allSections.map((s, i) =>
+    i === state.activeSectionIdx
+      ? { ...s, equipment: state.equipment, workItems: state.workItems, bearings: state.bearings, spareParts: state.spareParts, machining: state.machining, labor: state.labor }
+      : s
+  );
+}
+
+const DEFAULT_EQUIPMENT: Equipment = { type: 'electrobomba_centrifuga', power: 1, quantity: 1 };
+
+function makeSection(label: string, equipment?: Equipment): RepairSection {
+  return { id: crypto.randomUUID(), label, equipment: equipment ?? { ...DEFAULT_EQUIPMENT }, workItems: [], bearings: [], spareParts: [], machining: [], labor: [] };
+}
+
 // Initial empty budget state
 function createInitialBudget(): Budget {
   const today = new Date();
   const lastNumber = typeof window !== 'undefined' ? getLastBudgetNumber() : '7142';
-  
+  const initialEquipment: Equipment = { ...DEFAULT_EQUIPMENT };
+  const initialSection = makeSection('Equipo 1', initialEquipment);
+
   return {
     id: crypto.randomUUID(),
     companyId: 'bemec' as CompanyId,
@@ -39,16 +57,14 @@ function createInitialBudget(): Budget {
       responsable: 'Elías',
     },
     customer: {},
-    equipment: {
-      type: 'electrobomba_centrifuga',
-      power: 1,
-      quantity: 1,
-    },
+    equipment: initialEquipment,
     workItems: [],
     bearings: [],
     spareParts: [],
     machining: [],
     labor: [],
+    allSections: [initialSection],
+    activeSectionIdx: 0,
     taxes: [],
     subtotalLabor: 0,
     subtotalBearings: 0,
@@ -88,7 +104,12 @@ type BudgetAction =
   | { type: 'RECALCULATE_TOTALS' }
   | { type: 'SET_SUBTOTALS'; payload: { subtotalLabor: number; subtotalBearings: number; subtotalSpareParts: number; subtotalMachining: number; subtotalGeneral: number } }
   | { type: 'SET_BUDGET'; payload: Budget }
-  | { type: 'RESET' };
+  | { type: 'RESET' }
+  // Section management
+  | { type: 'ADD_SECTION' }
+  | { type: 'SWITCH_SECTION'; payload: number }
+  | { type: 'REMOVE_SECTION'; payload: number }
+  | { type: 'UPDATE_SECTION_LABEL'; payload: { idx: number; label: string } };
 
 // Reducer
 function budgetReducer(state: Budget, action: BudgetAction): Budget {
@@ -268,12 +289,103 @@ function budgetReducer(state: Budget, action: BudgetAction): Budget {
         updatedAt: new Date().toISOString(),
       };
     
-    case 'SET_BUDGET':
-      return action.payload;
-    
+    case 'SET_BUDGET': {
+      const incoming = action.payload;
+      // Migrate old budgets that don't have sections
+      if (!incoming.allSections || incoming.allSections.length === 0) {
+        const migrated = makeSection('Equipo 1', incoming.equipment);
+        migrated.workItems = incoming.workItems ?? [];
+        migrated.bearings = incoming.bearings ?? [];
+        migrated.spareParts = incoming.spareParts ?? [];
+        migrated.machining = incoming.machining ?? [];
+        migrated.labor = incoming.labor ?? [];
+        return { ...incoming, allSections: [migrated], activeSectionIdx: 0 };
+      }
+      return incoming;
+    }
+
     case 'RESET':
       return createInitialBudget();
-    
+
+    case 'ADD_SECTION': {
+      const savedSections = syncActiveSection(state);
+      const newSection = makeSection(`Equipo ${savedSections.length + 1}`);
+      return {
+        ...state,
+        equipment: { ...DEFAULT_EQUIPMENT },
+        workItems: [],
+        bearings: [],
+        spareParts: [],
+        machining: [],
+        labor: [],
+        subtotalLabor: 0,
+        subtotalBearings: 0,
+        subtotalSpareParts: 0,
+        subtotalMachining: 0,
+        subtotalGeneral: 0,
+        allSections: [...savedSections, newSection],
+        activeSectionIdx: savedSections.length,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    case 'SWITCH_SECTION': {
+      const newIdx = action.payload;
+      if (newIdx === state.activeSectionIdx) return state;
+      const savedSections = syncActiveSection(state);
+      const target = savedSections[newIdx];
+      return {
+        ...state,
+        equipment: target.equipment,
+        workItems: target.workItems,
+        bearings: target.bearings,
+        spareParts: target.spareParts,
+        machining: target.machining,
+        labor: target.labor,
+        allSections: savedSections,
+        activeSectionIdx: newIdx,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    case 'REMOVE_SECTION': {
+      if (state.allSections.length <= 1) return state;
+      const idxToRemove = action.payload;
+      const savedSections = syncActiveSection(state);
+      const newSections = savedSections.filter((_, i) => i !== idxToRemove);
+      const newIdx = Math.min(
+        idxToRemove === state.activeSectionIdx
+          ? Math.max(0, idxToRemove - 1)
+          : idxToRemove < state.activeSectionIdx
+          ? state.activeSectionIdx - 1
+          : state.activeSectionIdx,
+        newSections.length - 1
+      );
+      const target = newSections[newIdx];
+      return {
+        ...state,
+        equipment: target.equipment,
+        workItems: target.workItems,
+        bearings: target.bearings,
+        spareParts: target.spareParts,
+        machining: target.machining,
+        labor: target.labor,
+        allSections: newSections,
+        activeSectionIdx: newIdx,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    case 'UPDATE_SECTION_LABEL': {
+      return {
+        ...state,
+        allSections: state.allSections.map((s, i) =>
+          i === action.payload.idx ? { ...s, label: action.payload.label } : s
+        ),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
     default:
       return state;
   }
@@ -306,6 +418,12 @@ interface BudgetContextType {
   recalculateTotals: () => void;
   resetBudget: () => void;
   loadBudget: (budget: Budget) => void;
+  // Section management
+  addSection: () => void;
+  switchSection: (idx: number) => void;
+  removeSection: (idx: number) => void;
+  updateSectionLabel: (idx: number, label: string) => void;
+  effectiveSections: RepairSection[];
 }
 
 const BudgetContext = createContext<BudgetContextType | null>(null);
@@ -364,6 +482,13 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
     });
   }, [budget.companyId]);
 
+  // Effective sections: active section always uses the current flat arrays (in case of unsaved edits)
+  const effectiveSections: RepairSection[] = budget.allSections.map((s, i) =>
+    i === budget.activeSectionIdx
+      ? { ...s, equipment: budget.equipment, workItems: budget.workItems, bearings: budget.bearings, spareParts: budget.spareParts, machining: budget.machining, labor: budget.labor }
+      : s
+  );
+
   const contextValue: BudgetContextType = {
     budget,
     setCompany,
@@ -390,6 +515,11 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
     recalculateTotals,
     resetBudget,
     loadBudget: (newBudget) => dispatch({ type: 'SET_BUDGET', payload: newBudget }),
+    addSection: () => dispatch({ type: 'ADD_SECTION' }),
+    switchSection: (idx) => dispatch({ type: 'SWITCH_SECTION', payload: idx }),
+    removeSection: (idx) => dispatch({ type: 'REMOVE_SECTION', payload: idx }),
+    updateSectionLabel: (idx, label) => dispatch({ type: 'UPDATE_SECTION_LABEL', payload: { idx, label } }),
+    effectiveSections,
   };
 
   return (
