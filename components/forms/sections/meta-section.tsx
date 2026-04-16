@@ -4,12 +4,12 @@ import { useBudget } from '@/lib/budget-context';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileText, User } from 'lucide-react';
+import { FileText, User, Loader2 } from 'lucide-react';
 
 const RESPONSABLES = ['Elías', 'Pablo', 'Natalia'];
 
 export function MetaSection() {
-  const { budget, setMeta } = useBudget();
+  const { budget, setMeta, isLoadingNumber } = useBudget();
   const { meta } = budget;
 
   return (
@@ -21,15 +21,22 @@ export function MetaSection() {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <Label htmlFor="budget-number">Número de Presupuesto</Label>
-            <Input
-              id="budget-number"
-              value={meta.number}
-              onChange={(e) => setMeta({ number: e.target.value })}
-              placeholder="7143"
-            />
+            <div className="relative">
+              <Input
+                id="budget-number"
+                value={meta.number}
+                onChange={(e) => setMeta({ number: e.target.value })}
+                placeholder="7143"
+                disabled={isLoadingNumber}
+                className={isLoadingNumber ? 'opacity-50' : ''}
+              />
+              {isLoadingNumber && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+              )}
+            </div>
           </div>
 
           <div>

@@ -8,7 +8,11 @@ async function resolveSheetName(accessToken: string, gid: number): Promise<strin
   const res = await fetch(`${SHEETS_API}/${SPREADSHEET_ID}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) throw new Error(`No se pudo obtener metadata: ${await res.text()}`);
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error('[resolveSheetName] Google API error:', res.status, errText);
+    throw new Error(`No se pudo obtener metadata (${res.status}): ${errText}`);
+  }
   const data = await res.json();
   const sheet = (data.sheets ?? []).find(
     (s: { properties: { sheetId: number; title: string } }) => s.properties?.sheetId === gid
@@ -18,13 +22,18 @@ async function resolveSheetName(accessToken: string, gid: number): Promise<strin
 }
 
 /**
- * Encuentra la fila donde escribir: la inmediatamente siguiente
- * a la ÚLTIMA fila que tenga un valor en columna B.
+ * Encuentra la fila donde escribir para el número de presupuesto dado.
+ *
+ * Estrategia:
+ *   1. Buscar la fila donde A = budgetNumber y B está vacía → ese es el slot correcto.
+ *   2. Fallback: si no existe esa fila, escribir en la primera fila con B vacía
+ *      inmediatamente después de la última fila con B llena.
  */
-async function findNextRow(
+async function findTargetRow(
   accessToken: string,
-  sheetName: string
-): Promise<{ rowNumber: number; colAValue: string }> {
+  sheetName: string,
+  budgetNumber: string
+): Promise<number> {
   const range = encodeURIComponent(`'${sheetName}'!A:B`);
   const res = await fetch(`${SHEETS_API}/${SPREADSHEET_ID}/values/${range}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -34,28 +43,29 @@ async function findNextRow(
   const data = await res.json();
   const rows: string[][] = data.values ?? [];
 
-  // Encontrar la ÚLTIMA fila con B no vacía
-  let lastFilledIndex = 0;
+  // Buscar exactamente la fila donde A = budgetNumber y B está vacía
   for (let i = 1; i < rows.length; i++) {
-    if ((rows[i]?.[1]?.trim() ?? '') !== '') {
-      lastFilledIndex = i;
+    const colA = rows[i]?.[0]?.trim() ?? '';
+    const colB = rows[i]?.[1]?.trim() ?? '';
+    if (colA === budgetNumber && colB === '') {
+      return i + 1; // rowNumber 1-based para Sheets API
     }
   }
 
-  const nextIndex = lastFilledIndex + 1;
-  const colAValue = rows[nextIndex]?.[0]?.trim() ?? '';
-
-  return {
-    rowNumber: nextIndex + 1, // 1-based para Sheets API
-    colAValue,
-  };
+  // Fallback: fila siguiente a la última con B llena
+  let lastFilledIndex = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const colB = rows[i]?.[1]?.trim() ?? '';
+    if (colB !== '') lastFilledIndex = i;
+  }
+  return lastFilledIndex + 2; // +1 por la siguiente fila, +1 por 1-based
 }
 
 /**
  * POST /api/sheets/register
  *
- * Escribe en la fila inmediatamente posterior al último registro real
- * usando PUT (values.update) sobre el rango exacto — no append.
+ * Registra un presupuesto en la fila correspondiente a su número.
+ * Busca la fila donde A = budgetNumber y B está vacía, y completa las columnas B–I.
  *
  * Body JSON:
  *   companyId    : 'bemec' | 'bamore'
@@ -64,6 +74,7 @@ async function findNextRow(
  *   budgetDate   : string
  *   pideNumber   : string
  *   merchandise  : string
+ *   responsable  : string
  */
 export async function POST(request: NextRequest) {
   if (!SPREADSHEET_ID) {
@@ -97,20 +108,20 @@ export async function POST(request: NextRequest) {
     const { access_token } = await refreshAccessToken(refreshToken);
     const sheetName = await resolveSheetName(access_token, gid);
 
-    // Fila donde escribir: justo después del último registro real
-    const { rowNumber } = await findNextRow(access_token, sheetName);
+    // Encontrar la fila donde A = budgetNumber y B está vacía
+    const rowNumber = await findTargetRow(access_token, sheetName, budgetNumber);
 
-    // Columnas A–I
+    // Columnas A–I: A ya tiene el número pre-populado, completamos el resto
     const row = [
-      budgetNumber ?? '',          // A: Nº de Solicitud
-      fechaSolicitud,              // B: Fecha de Solicitud
-      responsable ?? 'Elías',      // C: Responsable
-      'Email',                     // D: Medio
-      clientName   ?? '',  // E: Cliente
-      budgetDate   ?? '',  // F: Fecha de cotización
-      '',                  // G: Fecha OC (vacío)
-      pideNumber   ?? '',  // H: Nº PIDE
-      merchandise  ?? '',  // I: Mercadería Cotizada
+      budgetNumber   ?? '',  // A: Nº de Solicitud (confirma/completa)
+      fechaSolicitud,        // B: Fecha de Solicitud ← esto es lo que "registra" la fila
+      responsable    ?? 'Elías', // C: Responsable
+      'Email',               // D: Medio
+      clientName     ?? '',  // E: Cliente
+      budgetDate     ?? '',  // F: Fecha de cotización
+      '',                    // G: Fecha OC (vacío)
+      pideNumber     ?? '',  // H: Nº PIDE
+      merchandise    ?? '',  // I: Mercadería Cotizada
     ];
 
     const updateRange = encodeURIComponent(`'${sheetName}'!A${rowNumber}:I${rowNumber}`);
@@ -130,7 +141,7 @@ export async function POST(request: NextRequest) {
       throw new Error(`Error al escribir en fila ${rowNumber}: ${await updateRes.text()}`);
     }
 
-    return NextResponse.json({ success: true, rowNumber });
+    return NextResponse.json({ success: true, rowNumber, budgetNumber });
   } catch (error) {
     console.error('[Sheets register] Error:', error);
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 });

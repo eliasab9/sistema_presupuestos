@@ -39,7 +39,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className="font-sans antialiased">
+      <head>
+        <link
+          rel="preload"
+          href="/fonts/Changa-VariableFont_wght.ttf"
+          as="font"
+          type="font/ttf"
+          crossOrigin="anonymous"
+        />
+      </head>
+      <body className="font-sans antialiased flex flex-col min-h-screen">
         {children}
         <Toaster />
         <Analytics />

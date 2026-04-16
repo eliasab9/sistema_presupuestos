@@ -296,7 +296,7 @@ export function CustomerManager({ company, onSelectCustomer, onNewBudgetWithoutC
           </DialogHeader>
           
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="col-span-2">
                 <Label htmlFor="name">Nombre / Razón Social *</Label>
                 <Input

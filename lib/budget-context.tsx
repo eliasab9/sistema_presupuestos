@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useReducer, useCallback, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useReducer, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type {
   Budget,
   BudgetMeta,
@@ -49,7 +49,7 @@ function createInitialBudget(): Budget {
       number: generateBudgetNumber(lastNumber),
       date: formatDate(today),
       validUntil: formatDate(addDays(today, 7)),
-      exchangeRate: 1200,
+      exchangeRate: 1400,
       currency: 'ARS',
       paymentTerms: 'A convenir',
       commercialValidity: '7 días hábiles',
@@ -394,6 +394,7 @@ function budgetReducer(state: Budget, action: BudgetAction): Budget {
 // Context type
 interface BudgetContextType {
   budget: Budget;
+  isLoadingNumber: boolean;
   setCompany: (companyId: CompanyId) => void;
   setMeta: (meta: Partial<BudgetMeta>) => void;
   setCustomer: (customer: Partial<Customer>) => void;
@@ -417,6 +418,7 @@ interface BudgetContextType {
   setLabor: (items: LaborItem[]) => void;
   recalculateTotals: () => void;
   resetBudget: () => void;
+  refreshBudgetNumber: () => void;
   loadBudget: (budget: Budget) => void;
   // Section management
   addSection: () => void;
@@ -430,26 +432,46 @@ const BudgetContext = createContext<BudgetContextType | null>(null);
 
 export function BudgetProvider({ children }: { children: ReactNode }) {
   const [budget, dispatch] = useReducer(budgetReducer, null, createInitialBudget);
+  const [isLoadingNumber, setIsLoadingNumber] = useState(false);
+  // Prevents double-invocation in React StrictMode (dev)
+  const fetchedOnMount = useRef(false);
 
-  // Auto-save draft
+  // Sync company font on body (BEMEC → Changa, BAMORE → system font)
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.body.dataset.company = budget.companyId;
+    }
+  }, [budget.companyId]);
+
+  // Auto-save draft — sync allSections before saving so multi-section data is never stale
   useEffect(() => {
     const timeout = setTimeout(() => {
-      saveDraft(budget);
+      const syncedSections = syncActiveSection(budget);
+      saveDraft({ ...budget, allSections: syncedSections });
     }, 1000);
     return () => clearTimeout(timeout);
   }, [budget]);
 
-  // Load draft on mount; if no draft, fetch next number from Sheets
+  // Load draft on mount; always refresh number + date from Sheets (run once, StrictMode-safe)
   useEffect(() => {
+    if (fetchedOnMount.current) return;
+    fetchedOnMount.current = true;
+
     const draft = loadDraft();
+    const companyId = draft?.companyId ?? 'bemec';
     if (draft && draft.id) {
       dispatch({ type: 'SET_BUDGET', payload: draft as Budget });
-    } else {
-      // Fresh budget — obtener el Nº real desde la hoja de cálculo
-      fetchNextBudgetNumber('bemec').then((next) => {
-        if (next) dispatch({ type: 'SET_META', payload: { number: next } });
-      });
     }
+
+    // Reset date to today and fetch current budget number from spreadsheet
+    const today = new Date();
+    dispatch({ type: 'SET_META', payload: { date: formatDate(today), validUntil: formatDate(addDays(today, 7)) } });
+    setIsLoadingNumber(true);
+    fetchNextBudgetNumber(companyId)
+      .then((next) => {
+        if (next) dispatch({ type: 'SET_META', payload: { number: next } });
+      })
+      .finally(() => setIsLoadingNumber(false));
   }, []);
 
   const recalculateTotals = useCallback(() => {
@@ -469,18 +491,32 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
 
   const setCompany = useCallback((companyId: CompanyId) => {
     dispatch({ type: 'SET_COMPANY', payload: companyId });
-    // Al cambiar de empresa, traer el siguiente número de esa empresa
-    fetchNextBudgetNumber(companyId).then((next) => {
-      if (next) dispatch({ type: 'SET_META', payload: { number: next } });
-    });
+    const today = new Date();
+    dispatch({ type: 'SET_META', payload: { date: formatDate(today), validUntil: formatDate(addDays(today, 7)) } });
+    setIsLoadingNumber(true);
+    fetchNextBudgetNumber(companyId)
+      .then((next) => {
+        if (next) dispatch({ type: 'SET_META', payload: { number: next } });
+      })
+      .finally(() => setIsLoadingNumber(false));
   }, []);
+
+  const refreshBudgetNumber = useCallback((companyId?: string) => {
+    const id = companyId ?? budget.companyId;
+    setIsLoadingNumber(true);
+    fetchNextBudgetNumber(id)
+      .then((next) => {
+        if (next) dispatch({ type: 'SET_META', payload: { number: next } });
+      })
+      .finally(() => setIsLoadingNumber(false));
+  }, [budget.companyId]);
 
   const resetBudget = useCallback(() => {
     dispatch({ type: 'RESET' });
-    fetchNextBudgetNumber(budget.companyId).then((next) => {
-      if (next) dispatch({ type: 'SET_META', payload: { number: next } });
-    });
-  }, [budget.companyId]);
+    const today = new Date();
+    dispatch({ type: 'SET_META', payload: { date: formatDate(today), validUntil: formatDate(addDays(today, 7)) } });
+    refreshBudgetNumber(budget.companyId);
+  }, [budget.companyId, refreshBudgetNumber]);
 
   // Effective sections: active section always uses the current flat arrays (in case of unsaved edits)
   const effectiveSections: RepairSection[] = budget.allSections.map((s, i) =>
@@ -491,6 +527,7 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
 
   const contextValue: BudgetContextType = {
     budget,
+    isLoadingNumber,
     setCompany,
     setMeta: (meta) => dispatch({ type: 'SET_META', payload: meta }),
     setCustomer: (customer) => dispatch({ type: 'SET_CUSTOMER', payload: customer }),
@@ -514,6 +551,7 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
     setLabor: (items) => dispatch({ type: 'SET_LABOR', payload: items }),
     recalculateTotals,
     resetBudget,
+    refreshBudgetNumber,
     loadBudget: (newBudget) => dispatch({ type: 'SET_BUDGET', payload: newBudget }),
     addSection: () => dispatch({ type: 'ADD_SECTION' }),
     switchSection: (idx) => dispatch({ type: 'SWITCH_SECTION', payload: idx }),

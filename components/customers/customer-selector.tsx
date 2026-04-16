@@ -155,7 +155,7 @@ export function CustomerSelector({ value, onChange, onSaveCustomer }: CustomerSe
               {value.name || 'Buscar cliente...'}
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-[400px] p-0" align="start">
+          <PopoverContent className="w-[min(400px,calc(100vw-2rem))] p-0" align="start">
             <Command>
               <CommandInput 
                 placeholder="Buscar por nombre, email o CUIT..." 
@@ -245,7 +245,7 @@ export function CustomerSelector({ value, onChange, onSaveCustomer }: CustomerSe
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="col-span-2">
           <Label htmlFor="customer-name">Cliente / Razón Social</Label>
           <Input

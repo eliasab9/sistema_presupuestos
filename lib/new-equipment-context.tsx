@@ -14,6 +14,7 @@ import { fetchNextBudgetNumber } from '@/lib/delivery/sheets-service';
 
 interface NewEquipmentContextType {
   budget: NewEquipmentBudget;
+  isLoadingNumber: boolean;
   setCompany: (companyId: CompanyId) => void;
   setMeta: (meta: Partial<BudgetMeta>) => void;
   setCustomer: (customer: Partial<Customer>) => void;
@@ -21,6 +22,7 @@ interface NewEquipmentContextType {
   updateItem: (id: string, updates: Partial<NewEquipmentItem>) => void;
   removeItem: (id: string) => void;
   resetBudget: () => void;
+  refreshBudgetNumber: () => void;
   loadBudget: (budget: NewEquipmentBudget) => void;
 }
 
@@ -69,15 +71,19 @@ function createEmptyBudget(): NewEquipmentBudget {
 
 export function NewEquipmentProvider({ children }: { children: React.ReactNode }) {
   const [budget, setBudget] = useState<NewEquipmentBudget>(createEmptyBudget);
+  const [isLoadingNumber, setIsLoadingNumber] = useState(false);
   const didInitRef = useRef(false);
 
   // Al montar, traer el siguiente Nº de presupuesto desde Sheets
   useEffect(() => {
     if (didInitRef.current) return;
     didInitRef.current = true;
-    fetchNextBudgetNumber('bemec').then((next) => {
-      if (next) setBudget(prev => ({ ...prev, meta: { ...prev.meta, number: next } }));
-    });
+    setIsLoadingNumber(true);
+    fetchNextBudgetNumber('bemec')
+      .then((next) => {
+        if (next) setBudget(prev => ({ ...prev, meta: { ...prev.meta, number: next } }));
+      })
+      .finally(() => setIsLoadingNumber(false));
   }, []);
 
   // Recalculate totals when items change
@@ -94,13 +100,20 @@ export function NewEquipmentProvider({ children }: { children: React.ReactNode }
     }
   }, [budget.items, budget.subtotalItems, budget.totalTax]);
 
+  const refreshBudgetNumber = useCallback((companyId?: CompanyId) => {
+    const id = companyId ?? budget.companyId;
+    setIsLoadingNumber(true);
+    fetchNextBudgetNumber(id)
+      .then((next) => {
+        if (next) setBudget(prev => ({ ...prev, meta: { ...prev.meta, number: next } }));
+      })
+      .finally(() => setIsLoadingNumber(false));
+  }, [budget.companyId]);
+
   const setCompany = useCallback((companyId: CompanyId) => {
     setBudget(prev => ({ ...prev, companyId, updatedAt: new Date().toISOString() }));
-    // Al cambiar empresa, traer el siguiente Nº para esa empresa
-    fetchNextBudgetNumber(companyId).then((next) => {
-      if (next) setBudget(prev => ({ ...prev, meta: { ...prev.meta, number: next } }));
-    });
-  }, []);
+    refreshBudgetNumber(companyId);
+  }, [refreshBudgetNumber]);
 
   const setMeta = useCallback((meta: Partial<BudgetMeta>) => {
     setBudget(prev => ({
@@ -157,11 +170,8 @@ export function NewEquipmentProvider({ children }: { children: React.ReactNode }
   const resetBudget = useCallback(() => {
     const fresh = createEmptyBudget();
     setBudget(fresh);
-    // Traer el siguiente Nº para la empresa actual
-    fetchNextBudgetNumber(budget.companyId).then((next) => {
-      if (next) setBudget(prev => ({ ...prev, meta: { ...prev.meta, number: next } }));
-    });
-  }, [budget.companyId]);
+    refreshBudgetNumber(budget.companyId);
+  }, [budget.companyId, refreshBudgetNumber]);
 
   const loadBudget = useCallback((newBudget: NewEquipmentBudget) => {
     setBudget(newBudget);
@@ -170,6 +180,7 @@ export function NewEquipmentProvider({ children }: { children: React.ReactNode }
   return (
     <NewEquipmentContext.Provider value={{
       budget,
+      isLoadingNumber,
       setCompany,
       setMeta,
       setCustomer,
@@ -177,6 +188,7 @@ export function NewEquipmentProvider({ children }: { children: React.ReactNode }
       updateItem,
       removeItem,
       resetBudget,
+      refreshBudgetNumber,
       loadBudget,
     }}>
       {children}

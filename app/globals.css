@@ -2,6 +2,15 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ── Changa Variable Font ── */
+@font-face {
+  font-family: 'Changa';
+  src: url('/fonts/Changa-VariableFont_wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* BEMEC Brand Colors - Teal palette from logo - ALL HEX for html2canvas compatibility */
   --background: #fafafa;
@@ -128,6 +137,11 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* ── Tipografía por empresa ── */
+[data-company="bemec"] {
+  font-family: 'Changa', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* ── BAMORE brand tokens ── */

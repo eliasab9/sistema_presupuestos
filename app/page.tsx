@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToPDF, exportToDOCX, exportToPDFBlob, exportNewEquipmentToPDF } from '@/lib/document/export-pdf';
-import { registerNewEquipmentBudgetInSheets } from '@/lib/delivery/sheets-service';
+import { registerNewEquipmentBudgetInSheets, registerRepairBudgetInSheets } from '@/lib/delivery/sheets-service';
 import { clearDraft } from '@/lib/storage/budgets';
 import { GoogleDriveUploadButton } from '@/components/ui/google-drive-upload-button';
 import type { Customer, CompanyId, BudgetType } from '@/types/budget';
@@ -41,10 +41,11 @@ import {
 type AppView = 'company' | 'budget-type' | 'customers' | 'budget' | 'new-equipment';
 
 function BudgetApp() {
-  const { budget, resetBudget, loadBudget, setCustomer, setCompany } = useBudget();
+  const { budget, resetBudget, refreshBudgetNumber, loadBudget, setCustomer, setCompany } = useBudget();
   const newEquipmentContext = useNewEquipment();
   const [isExporting, setIsExporting] = useState(false);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
+  const [mobileEqPreviewOpen, setMobileEqPreviewOpen] = useState(false);
   const [currentView, setCurrentView] = useState<AppView>('company');
   const [budgetType, setBudgetType] = useState<BudgetType>('reparacion');
   const [selectedCompanyId, setSelectedCompanyId] = useState<CompanyId>('bemec');
@@ -153,6 +154,8 @@ function BudgetApp() {
     setIsExporting(true);
     try {
       await exportToPDF(budget);
+      // Registrar en Sheets y refrescar número para el próximo presupuesto
+      registerRepairBudgetInSheets(budget).then(() => refreshBudgetNumber());
       toast.success('PDF exportado correctamente');
     } catch (error) {
       console.error('Error exporting PDF:', error);
@@ -166,6 +169,8 @@ function BudgetApp() {
     setIsExporting(true);
     try {
       await exportToDOCX(budget);
+      // Registrar en Sheets y refrescar número para el próximo presupuesto
+      registerRepairBudgetInSheets(budget).then(() => refreshBudgetNumber());
       toast.success('Documento exportado correctamente');
     } catch (error) {
       console.error('Error exporting DOCX:', error);
@@ -444,21 +449,79 @@ function BudgetApp() {
                 PDF
               </Button>
             </div>
+
+            {/* Mobile Menu */}
+            <div className="flex md:hidden items-center gap-2">
+              <Button
+                size="sm"
+                onClick={handleExportNewEquipmentPDF}
+                disabled={isExporting}
+                style={{ backgroundColor: eqCompany.primaryColor }}
+                className="rounded-xl text-white hover:opacity-90"
+              >
+                <FileDown className="h-4 w-4" />
+              </Button>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="outline" size="icon" className="rounded-xl">
+                    <Menu className="h-4 w-4" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-64">
+                  <div className="space-y-3 mt-6">
+                    <Button variant="outline" className="w-full justify-start rounded-xl" onClick={handleBackToCompany}>
+                      <Building2 className="h-4 w-4 mr-2" />Cambiar Empresa
+                    </Button>
+                    <Button variant="outline" className="w-full justify-start rounded-xl" onClick={handleBackToCustomers}>
+                      <Users className="h-4 w-4 mr-2" />Ver Clientes
+                    </Button>
+                    <Button variant="outline" className="w-full justify-start rounded-xl" onClick={() => {
+                      newEquipmentContext.resetBudget();
+                      newEquipmentContext.setCompany(selectedCompanyId);
+                      toast.success('Formulario limpiado');
+                    }}>
+                      <Trash2 className="h-4 w-4 mr-2" />Limpiar formulario
+                    </Button>
+                    <Separator />
+                    <Button className="w-full justify-start rounded-xl text-white" onClick={handleExportNewEquipmentPDF} disabled={isExporting} style={{ backgroundColor: eqCompany.primaryColor }}>
+                      <FileDown className="h-4 w-4 mr-2" />Exportar PDF
+                    </Button>
+                    <Separator />
+                    <Button variant="outline" className="w-full justify-start rounded-xl" onClick={() => setMobileEqPreviewOpen(true)}>
+                      <FileText className="h-4 w-4 mr-2" />Ver vista previa
+                    </Button>
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
           </div>
         </header>
 
         {/* Main Content */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Form Panel - 60% */}
+          {/* Form Panel */}
           <div className="w-full lg:flex-[3] min-w-0 overflow-hidden">
             <NewEquipmentForm />
           </div>
 
-          {/* Preview Panel - 40% */}
+          {/* Preview Panel */}
           <div className="hidden lg:block lg:flex-[2] flex-shrink-0 border-l overflow-hidden">
             <NewEquipmentPreview />
           </div>
         </div>
+
+        {/* Mobile Preview Sheet */}
+        <Sheet open={mobileEqPreviewOpen} onOpenChange={setMobileEqPreviewOpen}>
+          <SheetContent side="bottom" className="h-[90vh] p-0">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="font-semibold">Vista Previa</h2>
+              <Button variant="ghost" size="icon" onClick={() => setMobileEqPreviewOpen(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <NewEquipmentPreview />
+          </SheetContent>
+        </Sheet>
 
         {/* Footer */}
         <footer className="border-t bg-card px-4 py-2 text-xs text-muted-foreground flex items-center justify-between">
@@ -596,13 +659,13 @@ function BudgetApp() {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Form Panel - Takes more space */}
-        <div className="w-full lg:flex-[2] min-w-0 overflow-hidden">
+        {/* Form Panel */}
+        <div className="w-full md:flex-[3] lg:flex-[2] min-w-0 overflow-hidden">
           <BudgetForm />
         </div>
 
-        {/* Preview Panel - Compact sidebar */}
-        <div className="hidden lg:block w-[340px] xl:w-[380px] flex-shrink-0 border-l overflow-hidden">
+        {/* Preview Panel - shown from md+ */}
+        <div className="hidden md:block md:w-[300px] lg:w-[340px] xl:w-[380px] flex-shrink-0 border-l overflow-hidden">
           <BudgetPreview />
         </div>
       </div>

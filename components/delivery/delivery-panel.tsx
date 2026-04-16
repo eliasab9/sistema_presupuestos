@@ -49,7 +49,7 @@ import { buildBudgetEmailSubject, buildBudgetEmailBody } from '@/lib/delivery/em
 import { runDeliveryWorkflow, validateDeliverySettings, retryWorkflowStep } from '@/lib/delivery/workflow';
 
 export function DeliveryPanel() {
-  const { budget } = useBudget();
+  const { budget, refreshBudgetNumber } = useBudget();
   const company = COMPANIES[budget.companyId];
   
   // Settings state
@@ -116,8 +116,10 @@ export function DeliveryPanel() {
       settings,
       (state) => setWorkflowState(state)
     );
-    
+
     setWorkflowResult(result);
+    // Refrescar el número para el próximo presupuesto
+    if (result.steps.generate.success) refreshBudgetNumber();
   };
   
   // Run only save to Drive

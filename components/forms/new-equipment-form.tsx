@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/select';
 import { Plus, Trash2, Zap, Droplets, Settings, Gauge, Package } from 'lucide-react';
 import { NEW_EQUIPMENT_TYPE_LABELS, type NewEquipmentType, type NewEquipmentItem } from '@/types/budget';
+import { NewEquipmentDeliveryPanel } from '@/components/delivery/new-equipment-delivery-panel';
 
 const EQUIPMENT_ICONS: Record<NewEquipmentType, React.ReactNode> = {
   motor_electrico: <Zap className="h-4 w-4" />,
@@ -44,7 +45,7 @@ function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
       case 'bomba_centrifuga':
         return (
           <>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Potencia (HP)</Label>
                 <Input
@@ -63,7 +64,7 @@ function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Forma Constructiva</Label>
                 <Input
@@ -86,7 +87,7 @@ function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
       
       case 'reductor_velocidad':
         return (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">Relación de Transmisión</Label>
               <Input
@@ -108,7 +109,7 @@ function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
       
       case 'variador_frecuencia':
         return (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">Voltaje de Entrada</Label>
               <Input
@@ -176,7 +177,7 @@ function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
       </CardHeader>
       <CardContent className="space-y-3">
         {/* Common fields */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <Label className="text-xs">Marca</Label>
             <Input
@@ -201,7 +202,7 @@ function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
         <Separator />
 
         {/* Pricing */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div>
             <Label className="text-xs">Cantidad</Label>
             <Input
@@ -427,6 +428,13 @@ export function NewEquipmentForm() {
               className="resize-none bg-white"
             />
           </div>
+        </section>
+
+        <Separator />
+
+        {/* Delivery Panel */}
+        <section>
+          <NewEquipmentDeliveryPanel />
         </section>
       </div>
     </ScrollArea>

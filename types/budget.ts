@@ -8,7 +8,8 @@ export interface Company {
   logo: string;
   primaryColor: string;
   secondaryColor: string;
-  driveFolderId: string; // Google Drive root folder ID for budgets
+  driveFolderId: string; // Google Drive root folder ID for repair budgets
+  driveNewEquipmentFolderId?: string; // Google Drive root folder ID for new equipment budgets (optional, falls back to driveFolderId)
 }
 
 export const COMPANIES: Record<CompanyId, Company> = {
@@ -29,6 +30,7 @@ export const COMPANIES: Record<CompanyId, Company> = {
     primaryColor: '#1e3a5f',
     secondaryColor: '#2c5282',
     driveFolderId: '1PtfMbCySFAIVNI9QIw790AN_sJkcp6E6',
+    driveNewEquipmentFolderId: '1TPlACqvDMS8aobGaCjKIvGhhMMzbHd57',
   },
 };
 
@@ -54,6 +56,7 @@ export type EquipmentType =
   | 'electrobomba_centrifuga'
   | 'electrobomba_sumergible'
   | 'bomba_centrifuga'
+  | 'motovibrador'
   | 'reductor'
   | 'estator'
   | 'eje_balancear'
@@ -242,6 +245,9 @@ export const COMMON_WORK_ITEMS = [
   'Desarme general de la bomba centrífuga.',
   'Desarme general del motor eléctrico.',
   'Fabricación de bobinado nuevo del motor.',
+  'Barnizado estator (aislación clase F).',
+  'Limpieza de bobinado con solvente dieléctrico.',
+  'Aplicación de barniz rojo de terminación.',
   'Reemplazo de rodamientos.',
   'Reemplazo de sello mecánico.',
   'Mecanizado de eje.',
@@ -258,6 +264,7 @@ export const EQUIPMENT_TYPE_LABELS: Record<EquipmentType, string> = {
   electrobomba_centrifuga: 'Electrobomba centrífuga',
   electrobomba_sumergible: 'Electrobomba sumergible',
   bomba_centrifuga: 'Bomba centrífuga',
+  motovibrador: 'Motovibrador',
   reductor: 'Reductor',
   estator: 'Estator',
   eje_balancear: 'Eje para balancear',

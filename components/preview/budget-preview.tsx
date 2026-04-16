@@ -27,35 +27,22 @@ function SectionBreakdown({ section, sectionTotals, primaryColor, isOnly }: {
     equipment.power ? `${equipment.power} HP` : null,
   ].filter(Boolean).join(' · ');
 
-  const windingItems  = labor.filter(i => i.description.toLowerCase().includes('bobinado'));
-  const hasWinding    = windingItems.length > 0;
+  // Single unified total
+  const sectionTotal =
+    sectionTotals.labor +
+    sectionTotals.bearings +
+    sectionTotals.spareParts +
+    sectionTotals.machining;
 
-  // Winding total comes from actual items in the section
-  const windingTotal = windingItems.reduce((s, i) => s + i.priceARS, 0);
-
-  // Non-winding labor total = sectionTotals.labor (pre-computed, guaranteed correct) minus winding
-  const nonWindingLaborTotal = sectionTotals.labor - windingTotal;
-
-  // Materiales = non-winding labor (if no bobinado) + bearings + spareParts + machining
-  const materialesTotal = (hasWinding ? 0 : nonWindingLaborTotal)
-    + sectionTotals.bearings
-    + sectionTotals.spareParts
-    + sectionTotals.machining;
-
-  // Description lines (labels only, no values)
-  const materialesLaborDescs = hasWinding
-    ? []
-    : labor.filter(i => !i.description.toLowerCase().includes('bobinado')).map(i => i.description);
-
-  const materialesDescLines: string[] = [
-    ...materialesLaborDescs,
+  // All description lines (labels only, no individual prices shown to client)
+  const allDescLines: string[] = [
+    ...labor.map(i => i.description),
     ...bearings.map(i => `Rod. ${i.code}${i.quantity > 1 ? ` × ${i.quantity}` : ''}`),
     ...spareParts.map(i => `${i.description}${i.quantity > 1 ? ` × ${i.quantity}` : ''}`),
     ...machining.map(i => `${i.description}${i.quantity > 1 ? ` × ${i.quantity}` : ''}`),
   ];
 
-  const hasMateriales  = materialesTotal > 0 || materialesDescLines.length > 0;
-  const sectionTotal   = windingTotal + materialesTotal;
+  const hasEconomics = sectionTotal > 0 || allDescLines.length > 0;
 
   return (
     <div>
@@ -105,8 +92,8 @@ function SectionBreakdown({ section, sectionTotals, primaryColor, isOnly }: {
         </section>
       )}
 
-      {/* Economic breakdown */}
-      {(hasWinding || hasMateriales) && (
+      {/* Economic breakdown — single unified section */}
+      {hasEconomics && (
         <section style={{ marginBottom: '12px' }}>
           <h3 style={{
             fontSize: '10px', fontWeight: 700, color: primaryColor,
@@ -115,57 +102,20 @@ function SectionBreakdown({ section, sectionTotals, primaryColor, isOnly }: {
             Desglose Económico
           </h3>
 
-          {/* Fabricación de Bobinado */}
-          {hasWinding && (
-            <div style={{ marginBottom: '8px' }}>
-              <h4 style={{
-                fontSize: '9px', fontWeight: 700, color: '#444',
-                textTransform: 'uppercase', marginBottom: '3px',
-                borderBottom: '1px solid #e5e5e5', paddingBottom: '2px',
-              }}>
-                Fabricación de Bobinado
-              </h4>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
-                <tbody>
-                  {windingItems.map(item => (
-                    <tr key={item.id}>
-                      <td style={{ padding: '3px 0', color: '#333' }}>{item.description}</td>
-                      <td style={{ padding: '3px 0', textAlign: 'right', fontWeight: 500, color: '#333', width: '100px' }}>
-                        {formatARS(Number(item.priceARS) || 0)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Materiales y Mantenimiento */}
-          {hasMateriales && (
-            <div style={{ marginBottom: '8px' }}>
-              <h4 style={{
-                fontSize: '9px', fontWeight: 700, color: '#444',
-                textTransform: 'uppercase', marginBottom: '3px',
-                borderBottom: '1px solid #e5e5e5', paddingBottom: '2px',
-              }}>
-                Materiales y Mantenimiento
-              </h4>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
-                <tbody>
-                  <tr>
-                    <td style={{ padding: '3px 0', color: '#555', fontStyle: 'italic', lineHeight: '1.4' }}>
-                      {materialesDescLines.length > 0
-                        ? materialesDescLines.join(' · ')
-                        : 'Materiales y mantenimiento'}
-                    </td>
-                    <td style={{ padding: '3px 0', textAlign: 'right', fontWeight: 500, color: '#333', width: '100px', verticalAlign: 'top' }}>
-                      {formatARS(materialesTotal)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )}
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
+            <tbody>
+              <tr>
+                <td style={{ padding: '3px 0', color: '#555', fontStyle: 'italic', lineHeight: '1.4' }}>
+                  {allDescLines.length > 0
+                    ? allDescLines.join(' · ')
+                    : 'Trabajos de reparación y materiales'}
+                </td>
+                <td style={{ padding: '3px 0', textAlign: 'right', fontWeight: 500, color: '#333', width: '100px', verticalAlign: 'top' }}>
+                  {formatARS(sectionTotal)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
           {/* Section subtotal */}
           <div style={{ borderTop: `1px solid ${primaryColor}`, paddingTop: '5px', marginTop: '5px', display: 'flex', justifyContent: 'space-between' }}>
@@ -190,6 +140,9 @@ export function BudgetPreview() {
   const company      = COMPANIES[budget.companyId];
   const primaryColor = company.primaryColor;
   const isOnly       = effectiveSections.length === 1;
+  const previewFont  = budget.companyId === 'bemec'
+    ? "'Changa', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif"
+    : "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif";
 
   // Compute per-section totals. For the active section, use pre-computed budget
   // subtotals (same values shown in TotalsSection — guaranteed correct). For
@@ -227,7 +180,7 @@ export function BudgetPreview() {
               padding: '15mm 20mm',
               backgroundColor: '#ffffff',
               boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-              fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif",
+              fontFamily: previewFont,
               transform: 'scale(0.5)',
               transformOrigin: 'top left',
               position: 'relative',
@@ -349,7 +302,7 @@ export function BudgetPreview() {
                 Observaciones
               </h3>
               <div style={{ fontSize: '9px', color: '#555', lineHeight: 1.4 }}>
-                <p style={{ margin: '2px 0' }}>• IVA: 21% materiales y mantenimiento — 10,5% fabricación de bobinado.</p>
+                <p style={{ margin: '2px 0' }}>• Precios expresados en pesos argentinos. IVA no incluido.</p>
                 <p style={{ margin: '2px 0' }}>• TC utilizado: ${meta.exchangeRate.toLocaleString('es-AR')} / U$S (referencial). Validez: {meta.commercialValidity || '7 días hábiles'}. Pago: {meta.paymentTerms || 'A convenir'}.</p>
                 {meta.generalNotes && (
                   <p style={{ marginTop: '4px', whiteSpace: 'pre-line' }}>{meta.generalNotes}</p>

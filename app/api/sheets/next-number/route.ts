@@ -20,13 +20,11 @@ async function resolveSheetName(accessToken: string, gid: number): Promise<strin
 /**
  * GET /api/sheets/next-number?companyId=bemec
  *
- * Estrategia:
- *   1. Leer columnas A y B.
- *   2. Encontrar la ÚLTIMA fila donde B tiene un valor (= último presupuesto real).
- *   3. La fila siguiente es el próximo slot libre.
- *   4. El valor en columna A de esa fila siguiente es el próximo número.
- *
- * Esto evita confundirse con huecos anteriores que tengan A con número pero B vacía.
+ * Lógica exacta:
+ *   1. Recorrer las filas buscando la ÚLTIMA donde columna B tenga un valor.
+ *   2. La fila inmediatamente siguiente tiene B vacía → esa es el próximo slot.
+ *   3. Devolver el valor de columna A de esa fila siguiente.
+ *   4. Si no hay valor pre-populado en A, incrementar el último número encontrado.
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -56,34 +54,27 @@ export async function GET(request: NextRequest) {
     const data = await res.json();
     const rows: string[][] = data.values ?? [];
 
-    // Encontrar la ÚLTIMA fila con B no vacía (último presupuesto real ingresado)
-    let lastFilledRowIndex = 0; // índice 0-based en el array
+    // Última fila donde B tiene valor = último presupuesto registrado
+    let lastFilledIndex = 0;
     for (let i = 1; i < rows.length; i++) {
       const colB = rows[i]?.[1]?.trim() ?? '';
-      if (colB !== '') {
-        lastFilledRowIndex = i;
-      }
+      if (colB !== '') lastFilledIndex = i;
     }
 
-    // La siguiente fila al último registro real
-    const nextRowIndex = lastFilledRowIndex + 1;
-    const nextColA = rows[nextRowIndex]?.[0]?.trim() ?? '';
+    // La fila siguiente tiene B vacía → ese es el próximo slot
+    const nextIndex = lastFilledIndex + 1;
+    const nextColA = rows[nextIndex]?.[0]?.trim() ?? '';
 
-    // Si la siguiente fila tiene número pre-populado en A, usarlo
-    // Si no, tomar el último número encontrado e incrementarlo
+    // Si hay número pre-populado en A, usarlo; si no, incrementar el último
     let nextNumber: string;
     if (nextColA !== '') {
       nextNumber = nextColA;
     } else {
-      const lastColA = rows[lastFilledRowIndex]?.[0]?.trim() ?? '0';
-      const lastNum = parseInt(lastColA, 10);
+      const lastNum = parseInt(rows[lastFilledIndex]?.[0]?.trim() ?? '0', 10);
       nextNumber = String(isNaN(lastNum) ? 1 : lastNum + 1);
     }
 
-    // rowNumber es 1-based para la API de Sheets (nextRowIndex + 1 porque el array es 0-based)
-    const rowNumber = nextRowIndex + 1;
-
-    return NextResponse.json({ success: true, nextNumber, rowNumber });
+    return NextResponse.json({ success: true, nextNumber });
   } catch (error) {
     console.error('[Sheets next-number] Error:', error);
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 });

@@ -79,7 +79,7 @@ export function BearingsSection() {
                 key={item.id} 
                 className="flex items-center gap-2 bg-muted/50 rounded-md p-2"
               >
-                <div className="flex-1 grid grid-cols-4 gap-2 items-center">
+                <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2 items-center">
                   <Input
                     value={item.code}
                     onChange={(e) => handleUpdateBearing(item.id, { code: e.target.value })}
