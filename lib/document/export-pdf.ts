@@ -90,7 +90,7 @@ export async function exportToPDF(budget: Budget): Promise<void> {
 
   try {
     const canvas = await html2canvas(clone, {
-      scale: 2,
+      scale: 1.5,
       useCORS: true,
       allowTaint: true,
       logging: false,
@@ -104,18 +104,18 @@ export async function exportToPDF(budget: Budget): Promise<void> {
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
     const pdf = new jsPDF('p', 'mm', 'a4');
-    const imgData = canvas.toDataURL('image/png');
+    const imgData = canvas.toDataURL('image/jpeg', 0.85);
 
     let heightLeft = imgHeight;
     let position = 0;
 
-    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
     heightLeft -= pageHeight;
 
     while (heightLeft >= 0) {
       position = heightLeft - imgHeight;
       pdf.addPage();
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
     }
 
@@ -429,7 +429,7 @@ export async function exportToPDFBlob(budget: Budget): Promise<Blob> {
 
   try {
     const canvas = await html2canvas(clone, {
-      scale: 2,
+      scale: 1.5,
       useCORS: true,
       allowTaint: true,
       logging: false,
@@ -443,18 +443,18 @@ export async function exportToPDFBlob(budget: Budget): Promise<Blob> {
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
     const pdf = new jsPDF('p', 'mm', 'a4');
-    const imgData = canvas.toDataURL('image/png');
+    const imgData = canvas.toDataURL('image/jpeg', 0.85);
 
     let heightLeft = imgHeight;
     let position = 0;
 
-    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
     heightLeft -= pageHeight;
 
     while (heightLeft >= 0) {
       position = heightLeft - imgHeight;
       pdf.addPage();
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
     }
 
@@ -629,7 +629,7 @@ export async function exportNewEquipmentToPDF(budget: NewEquipmentBudget): Promi
 
   try {
     const canvas = await html2canvas(clone, {
-      scale: 2,
+      scale: 1.5,
       useCORS: true,
       allowTaint: true,
       logging: false,
@@ -643,18 +643,18 @@ export async function exportNewEquipmentToPDF(budget: NewEquipmentBudget): Promi
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
     const pdf = new jsPDF('p', 'mm', 'a4');
-    const imgData = canvas.toDataURL('image/png');
+    const imgData = canvas.toDataURL('image/jpeg', 0.85);
 
     let heightLeft = imgHeight;
     let position = 0;
 
-    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
     heightLeft -= pageHeight;
 
     while (heightLeft >= 0) {
       position = heightLeft - imgHeight;
       pdf.addPage();
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
     }
 
@@ -688,7 +688,7 @@ export async function exportNewEquipmentToPDFBlob(budget: NewEquipmentBudget): P
 
   try {
     const canvas = await html2canvas(clone, {
-      scale: 2,
+      scale: 1.5,
       useCORS: true,
       allowTaint: true,
       logging: false,
@@ -702,18 +702,18 @@ export async function exportNewEquipmentToPDFBlob(budget: NewEquipmentBudget): P
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
     const pdf = new jsPDF('p', 'mm', 'a4');
-    const imgData = canvas.toDataURL('image/png');
+    const imgData = canvas.toDataURL('image/jpeg', 0.85);
 
     let heightLeft = imgHeight;
     let position = 0;
 
-    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
     heightLeft -= pageHeight;
 
     while (heightLeft >= 0) {
       position = heightLeft - imgHeight;
       pdf.addPage();
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
     }
 
