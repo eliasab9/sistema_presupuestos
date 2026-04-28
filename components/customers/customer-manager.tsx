@@ -74,18 +74,20 @@ export function CustomerManager({ company, onSelectCustomer, onNewBudgetWithoutC
 
   useEffect(() => {
     loadCustomers();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [company.id]);
 
   useEffect(() => {
     if (searchQuery) {
-      setCustomers(searchCustomers(searchQuery));
+      setCustomers(searchCustomers(searchQuery, company.id));
     } else {
       loadCustomers();
     }
-  }, [searchQuery]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, company.id]);
 
   const loadCustomers = () => {
-    setCustomers(getAllCustomers());
+    setCustomers(getAllCustomers(company.id));
   };
 
   const resetForm = () => {
@@ -131,10 +133,11 @@ export function CustomerManager({ company, onSelectCustomer, onNewBudgetWithoutC
     }
 
     if (editingCustomer) {
-      updateCustomer(editingCustomer.id, formData);
+      // Editar = anclar a la empresa actual (soft migration de clientes legacy)
+      updateCustomer(editingCustomer.id, { ...formData, companyId: company.id });
       toast.success('Cliente actualizado');
     } else {
-      saveCustomer(formData);
+      saveCustomer({ ...formData, companyId: company.id });
       toast.success('Cliente guardado');
     }
 

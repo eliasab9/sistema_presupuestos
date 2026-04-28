@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useNewEquipment } from '@/lib/new-equipment-context';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,23 +10,107 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Plus, Trash2, Zap, Droplets, Settings, Gauge, Package } from 'lucide-react';
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Trash2, Zap, Droplets, Settings, Gauge, Package, ChevronsUpDown, Check } from 'lucide-react';
 import { NEW_EQUIPMENT_TYPE_LABELS, type NewEquipmentType, type NewEquipmentItem } from '@/types/budget';
 import { NewEquipmentDeliveryPanel } from '@/components/delivery/new-equipment-delivery-panel';
+import { cn } from '@/lib/utils';
 
 const EQUIPMENT_ICONS: Record<NewEquipmentType, React.ReactNode> = {
   motor_electrico: <Zap className="h-4 w-4" />,
   bomba_centrifuga: <Droplets className="h-4 w-4" />,
+  bomba_vacio: <Droplets className="h-4 w-4" />,
   reductor_velocidad: <Settings className="h-4 w-4" />,
   variador_frecuencia: <Gauge className="h-4 w-4" />,
   otro: <Package className="h-4 w-4" />,
 };
+
+// Standard HP values matching the labor pricing table
+const STANDARD_HP_VALUES = [
+  0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5.5, 7.5, 10, 12.5, 15, 20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 180, 220,
+];
+
+function HPSelector({
+  value,
+  onChange,
+}: {
+  value: string | undefined;
+  onChange: (val: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState('');
+
+  const handleSelect = (hp: number) => {
+    onChange(`${hp} HP`);
+    setOpen(false);
+  };
+
+  const handleCustom = () => {
+    const v = parseFloat(custom);
+    if (!isNaN(v) && v > 0) {
+      onChange(`${v} HP`);
+      setCustom('');
+      setOpen(false);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal h-9"
+        >
+          {value || 'Seleccionar potencia'}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[220px] p-0" align="start">
+        <div className="p-2 border-b">
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              step="0.25"
+              min="0.25"
+              placeholder="HP personalizado"
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCustom();
+              }}
+              className="h-8"
+            />
+            <Button size="sm" className="h-8 px-2" onClick={handleCustom}>OK</Button>
+          </div>
+        </div>
+        <div className="max-h-[200px] overflow-y-auto">
+          {STANDARD_HP_VALUES.map((hp) => {
+            const label = `${hp} HP`;
+            return (
+              <button
+                key={hp}
+                type="button"
+                onClick={() => handleSelect(hp)}
+                className={cn(
+                  'relative flex cursor-pointer select-none items-center w-full px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground',
+                  value === label && 'bg-accent',
+                )}
+              >
+                <Check className={cn('mr-2 h-4 w-4', value === label ? 'opacity-100' : 'opacity-0')} />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('es-AR', {
@@ -43,15 +128,15 @@ function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
     switch (item.type) {
       case 'motor_electrico':
       case 'bomba_centrifuga':
+      case 'bomba_vacio':
         return (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Potencia (HP)</Label>
-                <Input
-                  value={item.potencia || ''}
-                  onChange={(e) => updateItem(item.id, { potencia: e.target.value })}
-                  placeholder="Ej: 5 HP"
+                <HPSelector
+                  value={item.potencia}
+                  onChange={(val) => updateItem(item.id, { potencia: val })}
                 />
               </div>
               <div>
@@ -98,10 +183,9 @@ function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
             </div>
             <div>
               <Label className="text-xs">Potencia (HP)</Label>
-              <Input
-                value={item.potencia || ''}
-                onChange={(e) => updateItem(item.id, { potencia: e.target.value })}
-                placeholder="Ej: 5 HP"
+              <HPSelector
+                value={item.potencia}
+                onChange={(val) => updateItem(item.id, { potencia: val })}
               />
             </div>
           </div>
@@ -286,14 +370,6 @@ export function NewEquipmentForm() {
                 onChange={(e) => setMeta({ validUntil: e.target.value })}
               />
             </div>
-            <div>
-              <Label className="text-xs">TC (ARS/USD)</Label>
-              <Input
-                type="number"
-                value={meta.exchangeRate}
-                onChange={(e) => setMeta({ exchangeRate: parseFloat(e.target.value) || 0 })}
-              />
-            </div>
           </div>
         </section>
 
@@ -385,7 +461,21 @@ export function NewEquipmentForm() {
 
         {/* Totals */}
         <section>
-          <div className="bg-muted/50 rounded-lg p-4">
+          <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-3 border-b">
+              <Label className="text-xs">Tipo de Cambio (TC)</Label>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">$</span>
+                <Input
+                  type="number"
+                  value={meta.exchangeRate}
+                  onChange={(e) => setMeta({ exchangeRate: parseFloat(e.target.value) || 0 })}
+                  className="w-32 bg-white"
+                  placeholder="1200"
+                />
+                <span className="text-sm text-muted-foreground">/ U$S</span>
+              </div>
+            </div>
             <div className="flex items-center justify-between text-lg font-bold">
               <span>SUBTOTAL</span>
               <span>{formatCurrency(subtotalItems)}</span>

@@ -46,6 +46,7 @@ export interface Customer {
   locality?: string;
   province?: string;
   notes?: string;
+  companyId?: CompanyId; // Empresa a la que pertenece el cliente. Undefined = visible en todas (legacy/soft-migration).
   createdAt: string;
   updatedAt: string;
 }
@@ -56,6 +57,7 @@ export type EquipmentType =
   | 'electrobomba_centrifuga'
   | 'electrobomba_sumergible'
   | 'bomba_centrifuga'
+  | 'bomba_vacio'
   | 'motovibrador'
   | 'reductor'
   | 'estator'
@@ -250,6 +252,7 @@ export const COMMON_WORK_ITEMS = [
   'Aplicación de barniz rojo de terminación.',
   'Reemplazo de rodamientos.',
   'Reemplazo de sello mecánico.',
+  'Cambio de estator.',
   'Mecanizado de eje.',
   'Rellenado de eje.',
   'Encamisado de tapas.',
@@ -264,6 +267,7 @@ export const EQUIPMENT_TYPE_LABELS: Record<EquipmentType, string> = {
   electrobomba_centrifuga: 'Electrobomba centrífuga',
   electrobomba_sumergible: 'Electrobomba sumergible',
   bomba_centrifuga: 'Bomba centrífuga',
+  bomba_vacio: 'Bomba de vacío',
   motovibrador: 'Motovibrador',
   reductor: 'Reductor',
   estator: 'Estator',
@@ -276,9 +280,10 @@ export const EQUIPMENT_TYPE_LABELS: Record<EquipmentType, string> = {
 export type BudgetType = 'reparacion' | 'equipo_nuevo';
 
 // New Equipment types for sales
-export type NewEquipmentType = 
+export type NewEquipmentType =
   | 'motor_electrico'
   | 'bomba_centrifuga'
+  | 'bomba_vacio'
   | 'reductor_velocidad'
   | 'variador_frecuencia'
   | 'otro';
@@ -286,6 +291,7 @@ export type NewEquipmentType =
 export const NEW_EQUIPMENT_TYPE_LABELS: Record<NewEquipmentType, string> = {
   motor_electrico: 'Motor Eléctrico',
   bomba_centrifuga: 'Bomba Centrífuga',
+  bomba_vacio: 'Bomba de Vacío',
   reductor_velocidad: 'Reductor de Velocidad',
   variador_frecuencia: 'Variador de Frecuencia',
   otro: 'Otro',

@@ -20,6 +20,7 @@ export function CustomerSection() {
         <CustomerSelector
           value={budget.customer}
           onChange={setCustomer}
+          companyId={budget.companyId}
         />
       </CardContent>
     </Card>

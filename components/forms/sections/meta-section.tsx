@@ -69,22 +69,6 @@ export function MetaSection() {
             />
           </div>
 
-          <div className="col-span-2">
-            <Label htmlFor="exchange-rate">Tipo de Cambio (TC)</Label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">$</span>
-              <Input
-                id="exchange-rate"
-                type="number"
-                value={meta.exchangeRate}
-                onChange={(e) => setMeta({ exchangeRate: Number(e.target.value) })}
-                placeholder="1200"
-                className="max-w-[160px]"
-              />
-              <span className="text-sm text-muted-foreground">/ U$S</span>
-            </div>
-          </div>
-
           {/* Responsable */}
           <div className="col-span-2">
             <Label className="flex items-center gap-1 mb-2">

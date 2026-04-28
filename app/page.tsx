@@ -275,18 +275,26 @@ function BudgetApp() {
             <Button variant="ghost" size="icon" onClick={handleBackToCompany} className="rounded-xl">
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: `${selectedCompany.primaryColor}15` }}
+            <button
+              type="button"
+              onClick={handleBackToCompany}
+              className="flex items-center gap-3 rounded-xl px-1.5 py-1 -mx-1.5 -my-1 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1"
+              style={{ ['--tw-ring-color' as string]: selectedCompany.primaryColor }}
+              title="Volver al inicio"
             >
-              <img src={selectedCompany.logo} alt={selectedCompany.name} className="w-7 h-7 object-contain" />
-            </div>
-            <div>
-              <h1 className="text-base font-bold leading-tight" style={{ color: selectedCompany.primaryColor }}>
-                {selectedCompany.name}
-              </h1>
-              <p className="text-xs text-muted-foreground">{selectedCompany.subtitle}</p>
-            </div>
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: `${selectedCompany.primaryColor}15` }}
+              >
+                <img src={selectedCompany.logo} alt={selectedCompany.name} className="w-7 h-7 object-contain" />
+              </div>
+              <div className="text-left">
+                <h1 className="text-base font-bold leading-tight" style={{ color: selectedCompany.primaryColor }}>
+                  {selectedCompany.name}
+                </h1>
+                <p className="text-xs text-muted-foreground">{selectedCompany.subtitle}</p>
+              </div>
+            </button>
           </div>
         </header>
 
@@ -360,24 +368,32 @@ function BudgetApp() {
             <Button variant="ghost" size="icon" onClick={handleBackToBudgetType} className="rounded-xl">
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: `${selectedCompany.primaryColor}15` }}
+            <button
+              type="button"
+              onClick={handleBackToCompany}
+              className="flex items-center gap-3 rounded-xl px-1.5 py-1 -mx-1.5 -my-1 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1"
+              style={{ ['--tw-ring-color' as string]: selectedCompany.primaryColor }}
+              title="Volver al inicio"
             >
-              <img src={selectedCompany.logo} alt={selectedCompany.name} className="w-7 h-7 object-contain" />
-            </div>
-            <div>
-              <h1 className="text-base font-bold leading-tight" style={{ color: selectedCompany.primaryColor }}>
-                {selectedCompany.name}
-              </h1>
-              <div className="flex items-center gap-2">
-                <p className="text-xs text-muted-foreground">{selectedCompany.subtitle}</p>
-                <span className="text-xs text-muted-foreground">·</span>
-                <p className="text-xs font-medium" style={{ color: selectedCompany.primaryColor }}>
-                  {budgetType === 'reparacion' ? 'Reparación' : 'Equipo Nuevo'}
-                </p>
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: `${selectedCompany.primaryColor}15` }}
+              >
+                <img src={selectedCompany.logo} alt={selectedCompany.name} className="w-7 h-7 object-contain" />
               </div>
-            </div>
+              <div className="text-left">
+                <h1 className="text-base font-bold leading-tight" style={{ color: selectedCompany.primaryColor }}>
+                  {selectedCompany.name}
+                </h1>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-muted-foreground">{selectedCompany.subtitle}</p>
+                  <span className="text-xs text-muted-foreground">·</span>
+                  <p className="text-xs font-medium" style={{ color: selectedCompany.primaryColor }}>
+                    {budgetType === 'reparacion' ? 'Reparación' : 'Equipo Nuevo'}
+                  </p>
+                </div>
+              </div>
+            </button>
           </div>
         </header>
         <CustomerManager
@@ -407,18 +423,26 @@ function BudgetApp() {
               <Button variant="ghost" size="icon" onClick={handleBackToCustomers} className="rounded-xl">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: `${eqCompany.primaryColor}15` }}
+              <button
+                type="button"
+                onClick={handleBackToCompany}
+                className="flex items-center gap-3 rounded-xl px-1.5 py-1 -mx-1.5 -my-1 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1"
+                style={{ ['--tw-ring-color' as string]: eqCompany.primaryColor }}
+                title="Volver al inicio"
               >
-                <img src={eqCompany.logo} alt={eqCompany.name} className="w-6 h-6 object-contain" />
-              </div>
-              <div>
-                <h1 className="text-base font-bold leading-tight" style={{ color: eqCompany.primaryColor }}>
-                  {eqCompany.name}
-                </h1>
-                <p className="text-xs text-muted-foreground">Presupuesto de Equipo Nuevo</p>
-              </div>
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center"
+                  style={{ backgroundColor: `${eqCompany.primaryColor}15` }}
+                >
+                  <img src={eqCompany.logo} alt={eqCompany.name} className="w-6 h-6 object-contain" />
+                </div>
+                <div className="text-left">
+                  <h1 className="text-base font-bold leading-tight" style={{ color: eqCompany.primaryColor }}>
+                    {eqCompany.name}
+                  </h1>
+                  <p className="text-xs text-muted-foreground">Presupuesto de Equipo Nuevo</p>
+                </div>
+              </button>
             </div>
 
             {/* Desktop Actions */}
@@ -546,18 +570,26 @@ function BudgetApp() {
             <Button variant="ghost" size="icon" onClick={handleBackToCustomers} className="rounded-xl">
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center"
-              style={{ backgroundColor: `${company.primaryColor}15` }}
+            <button
+              type="button"
+              onClick={handleBackToCompany}
+              className="flex items-center gap-3 rounded-xl px-1.5 py-1 -mx-1.5 -my-1 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1"
+              style={{ ['--tw-ring-color' as string]: company.primaryColor }}
+              title="Volver al inicio"
             >
-              <img src={company.logo} alt={company.name} className="w-6 h-6 object-contain" />
-            </div>
-            <div>
-              <h1 className="text-base font-bold leading-tight" style={{ color: company.primaryColor }}>
-                {company.name}
-              </h1>
-              <p className="text-xs text-muted-foreground hidden sm:block">{company.subtitle}</p>
-            </div>
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: `${company.primaryColor}15` }}
+              >
+                <img src={company.logo} alt={company.name} className="w-6 h-6 object-contain" />
+              </div>
+              <div className="text-left">
+                <h1 className="text-base font-bold leading-tight" style={{ color: company.primaryColor }}>
+                  {company.name}
+                </h1>
+                <p className="text-xs text-muted-foreground hidden sm:block">{company.subtitle}</p>
+              </div>
+            </button>
           </div>
 
           {/* Desktop Actions */}

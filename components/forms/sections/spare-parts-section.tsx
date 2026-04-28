@@ -18,6 +18,9 @@ import {
 
 const COMMON_SPARE_PARTS = [
   { id: 'seal_ceramic', description: 'Sello cerámico compacto', defaultPriceUSD: 13 },
+  { id: 'seal_conical', description: 'Sello cónico', defaultPriceUSD: 13 },
+  { id: 'seal_burgmann', description: 'Sello Burgmann', defaultPriceUSD: 0 },
+  { id: 'seal_special', description: 'Sello especial', defaultPriceUSD: 0 },
   { id: 'capacitor', description: 'Capacitor', defaultPriceUSD: 10 },
   { id: 'fan_cover', description: 'Cubre ventilador', defaultPriceUSD: 5 },
   { id: 'rear_cover', description: 'Tapa trasera', defaultPriceUSD: 10 },
@@ -46,6 +49,10 @@ export function SparePartsSection() {
           description = `Sello cerámico ø${newDiameter}mm compacto`;
           const result = calculateSealPrice(Number(newDiameter), 'ceramic_compact', 1, meta.exchangeRate);
           priceUSD = result.unitPriceUSD;
+        } else if (selectedType === 'seal_conical' && newDiameter) {
+          description = `Sello cónico ø${newDiameter}mm`;
+          const result = calculateSealPrice(Number(newDiameter), 'ceramic_conical', 1, meta.exchangeRate);
+          priceUSD = priceUSD || result.unitPriceUSD;
         } else if (selectedType === 'capacitor' && newDiameter) {
           description = `Capacitor ${newDiameter} uF`;
           const result = calculateCapacitorPrice(Number(newDiameter), 1, meta.exchangeRate);
@@ -175,7 +182,7 @@ export function SparePartsSection() {
               </SelectContent>
             </Select>
             
-            {(selectedType === 'seal_ceramic') && (
+            {(selectedType === 'seal_ceramic' || selectedType === 'seal_conical') && (
               <Input
                 type="number"
                 value={newDiameter}

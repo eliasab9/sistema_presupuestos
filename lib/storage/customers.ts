@@ -1,4 +1,4 @@
-import type { Customer } from '@/types/budget';
+import type { Customer, CompanyId } from '@/types/budget';
 
 const STORAGE_KEY = 'bemec_customers';
 
@@ -61,18 +61,25 @@ function initializeStorage(): void {
 }
 
 /**
- * Get all customers from storage
+ * Get all customers from storage.
+ * If companyId is provided, returns customers tagged for that company plus untagged (legacy) ones.
  */
-export function getAllCustomers(): Customer[] {
-  if (typeof window === 'undefined') return MOCK_CUSTOMERS;
-  
+export function getAllCustomers(companyId?: CompanyId): Customer[] {
+  if (typeof window === 'undefined') {
+    return companyId
+      ? MOCK_CUSTOMERS.filter(c => !c.companyId || c.companyId === companyId)
+      : MOCK_CUSTOMERS;
+  }
+
   initializeStorage();
-  
+
   const data = localStorage.getItem(STORAGE_KEY);
   if (!data) return [];
-  
+
   try {
-    return JSON.parse(data) as Customer[];
+    const all = JSON.parse(data) as Customer[];
+    if (!companyId) return all;
+    return all.filter(c => !c.companyId || c.companyId === companyId);
   } catch {
     return [];
   }
@@ -87,12 +94,12 @@ export function getCustomerById(id: string): Customer | undefined {
 }
 
 /**
- * Search customers by name, email, or cuit
+ * Search customers by name, email, or cuit, optionally filtered by company.
  */
-export function searchCustomers(query: string): Customer[] {
-  if (!query.trim()) return getAllCustomers();
-  
-  const customers = getAllCustomers();
+export function searchCustomers(query: string, companyId?: CompanyId): Customer[] {
+  if (!query.trim()) return getAllCustomers(companyId);
+
+  const customers = getAllCustomers(companyId);
   const lowerQuery = query.toLowerCase();
   
   return customers.filter(c => 

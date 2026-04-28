@@ -27,16 +27,17 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import type { Customer } from '@/types/budget';
+import type { Customer, CompanyId } from '@/types/budget';
 import { getAllCustomers, saveCustomer, updateCustomer, searchCustomers } from '@/lib/storage/customers';
 
 interface CustomerSelectorProps {
   value: Partial<Customer>;
   onChange: (customer: Partial<Customer>) => void;
   onSaveCustomer?: (customer: Customer) => void;
+  companyId?: CompanyId;
 }
 
-export function CustomerSelector({ value, onChange, onSaveCustomer }: CustomerSelectorProps) {
+export function CustomerSelector({ value, onChange, onSaveCustomer, companyId }: CustomerSelectorProps) {
   const [open, setOpen] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -45,16 +46,16 @@ export function CustomerSelector({ value, onChange, onSaveCustomer }: CustomerSe
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   useEffect(() => {
-    setCustomers(getAllCustomers());
-  }, []);
+    setCustomers(getAllCustomers(companyId));
+  }, [companyId]);
 
   useEffect(() => {
     if (searchQuery) {
-      setCustomers(searchCustomers(searchQuery));
+      setCustomers(searchCustomers(searchQuery, companyId));
     } else {
-      setCustomers(getAllCustomers());
+      setCustomers(getAllCustomers(companyId));
     }
-  }, [searchQuery]);
+  }, [searchQuery, companyId]);
 
   const handleSelectCustomer = useCallback((customer: Customer) => {
     setSelectedCustomerId(customer.id);
@@ -92,15 +93,16 @@ export function CustomerSelector({ value, onChange, onSaveCustomer }: CustomerSe
       locality: value.locality,
       province: value.province,
       notes: value.notes,
+      companyId,
     });
-    
+
     setSelectedCustomerId(newCustomer.id);
     onChange({ ...value, id: newCustomer.id });
-    setCustomers(getAllCustomers());
+    setCustomers(getAllCustomers(companyId));
     setHasUnsavedChanges(false);
     onSaveCustomer?.(newCustomer);
     setShowNewDialog(false);
-  }, [value, onChange, onSaveCustomer]);
+  }, [value, onChange, onSaveCustomer, companyId]);
 
   const handleUpdateExisting = useCallback(() => {
     if (!selectedCustomerId || !value.name) return;
@@ -115,14 +117,15 @@ export function CustomerSelector({ value, onChange, onSaveCustomer }: CustomerSe
       locality: value.locality,
       province: value.province,
       notes: value.notes,
+      companyId,
     });
-    
+
     if (updated) {
-      setCustomers(getAllCustomers());
+      setCustomers(getAllCustomers(companyId));
       setHasUnsavedChanges(false);
       onSaveCustomer?.(updated);
     }
-  }, [selectedCustomerId, value, onSaveCustomer]);
+  }, [selectedCustomerId, value, onSaveCustomer, companyId]);
 
   const handleClearSelection = useCallback(() => {
     setSelectedCustomerId(null);
