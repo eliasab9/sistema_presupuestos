@@ -377,7 +377,7 @@ export async function exportToDOCX(budget: Budget): Promise<void> {
       <h3>Observaciones</h3>
       <div class="observations">
         <ul>
-          <li>IVA: 21% materiales y mantenimiento — 10,5% fabricación de bobinado.</li>
+          <li>IVA: ${meta.ivaCondition || '21% materiales y mantenimiento — 10,5% fabricación de bobinado'}.</li>
           <li>Tipo de cambio utilizado: $${meta.exchangeRate.toLocaleString('es-AR')} / U$S (referencial a la fecha).</li>
           <li>Validez del presupuesto: ${meta.commercialValidity || '7 días hábiles'}.</li>
           <li>Forma de pago: ${meta.paymentTerms || 'A convenir'}.</li>
@@ -584,11 +584,12 @@ export async function exportToDocxBlob(budget: Budget): Promise<Blob> {
       <h3>Observaciones</h3>
       <div class="observations">
         <ul>
-          <li>IVA: 21% materiales y mantenimiento — 10,5% fabricación de bobinado.</li>
+          <li>IVA: ${meta.ivaCondition || '21% materiales y mantenimiento — 10,5% fabricación de bobinado'}.</li>
           <li>Tipo de cambio utilizado: $${meta.exchangeRate.toLocaleString('es-AR')} / U$S.</li>
           <li>Validez: ${meta.commercialValidity || '7 días hábiles'}.</li>
           <li>Forma de pago: ${meta.paymentTerms || 'A convenir'}.</li>
         </ul>
+        ${meta.generalNotes ? `<p style="margin-top: 10px;">${meta.generalNotes}</p>` : ''}
       </div>
 
       <div class="footer">

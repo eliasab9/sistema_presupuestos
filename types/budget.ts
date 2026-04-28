@@ -148,6 +148,7 @@ export interface BudgetMeta {
   paymentTerms?: string;
   commercialValidity?: string;
   generalNotes?: string;
+  ivaCondition?: string; // Condición de IVA seleccionada por chip
   pideNumber?: string; // Nº PIDE del equipo a presupuestar
   responsable?: string; // Quien realiza el presupuesto
 }

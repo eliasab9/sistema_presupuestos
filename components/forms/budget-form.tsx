@@ -12,6 +12,7 @@ import { MachiningSection } from './sections/machining-section';
 import { LaborSection } from './sections/labor-section';
 import { TotalsSection } from './sections/totals-section';
 import { ObservationsSection } from './sections/observations-section';
+import { CommercialConditionsSection } from './sections/commercial-conditions-section';
 import { DeliveryPanel } from '@/components/delivery/delivery-panel';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -134,6 +135,10 @@ export function BudgetForm() {
         <Separator />
 
         <TotalsSection />
+
+        <Separator />
+
+        <CommercialConditionsSection />
 
         <Separator />
 

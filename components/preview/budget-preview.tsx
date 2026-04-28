@@ -302,7 +302,7 @@ export function BudgetPreview() {
                 Observaciones
               </h3>
               <div style={{ fontSize: '9px', color: '#555', lineHeight: 1.4 }}>
-                <p style={{ margin: '2px 0' }}>• Precios expresados en pesos argentinos. IVA no incluido.</p>
+                <p style={{ margin: '2px 0' }}>• Precios expresados en pesos argentinos. IVA: {meta.ivaCondition || '21% materiales y mantenimiento — 10,5% fabricación de bobinado'}.</p>
                 <p style={{ margin: '2px 0' }}>• TC utilizado: ${meta.exchangeRate.toLocaleString('es-AR')} / U$S (referencial). Validez: {meta.commercialValidity || '7 días hábiles'}. Pago: {meta.paymentTerms || 'A convenir'}.</p>
                 {meta.generalNotes && (
                   <p style={{ marginTop: '4px', whiteSpace: 'pre-line' }}>{meta.generalNotes}</p>
