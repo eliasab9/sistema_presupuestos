@@ -26,9 +26,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -41,6 +38,7 @@ import {
 } from '@/components/ui/select';
 import { useBudget } from '@/lib/budget-context';
 import { COMPANIES } from '@/types/budget';
+import { BudgetPreview } from '@/components/preview/budget-preview';
 import { saveBudget } from '@/lib/storage/budgets';
 import { toast } from 'sonner';
 import type { 
@@ -602,92 +600,141 @@ export function DeliveryPanel() {
         </Collapsible>
       </CardContent>
 
-      {/* Preview / confirmation modal */}
+      {/* Preview / confirmation modal — wide two-column layout */}
       <Dialog open={pendingAction !== null} onOpenChange={(open) => { if (!open) setPendingAction(null); }}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Send className="w-5 h-5" style={{ color: company.primaryColor }} />
-              Confirmar envío
-            </DialogTitle>
-            <DialogDescription>
-              Revisá los datos antes de {pendingAction === 'drive' ? 'guardar en Drive' : pendingAction === 'email' ? 'enviar por email' : 'guardar y enviar'}.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent
+          showCloseButton={true}
+          className="max-w-[96vw] w-full sm:max-w-[92vw] lg:max-w-6xl h-[92vh] p-0 gap-0 overflow-hidden flex flex-col"
+        >
+          {/* Hidden title for screen readers */}
+          <DialogTitle className="sr-only">Confirmar envío del presupuesto</DialogTitle>
 
-          {pendingAction && (() => {
-            const eff = settingsForAction(pendingAction);
-            const willDrive = eff.saveToDrive;
-            const willEmail = eff.sendEmail;
-            return (
-              <div className="space-y-4 text-sm">
-                <div className="space-y-1 p-3 border rounded-md bg-muted/30">
-                  <div className="font-medium flex items-center gap-2">
-                    <FileText className="w-4 h-4" />
-                    Archivo
-                  </div>
-                  <div className="text-muted-foreground">
-                    <div>Formato: <span className="font-mono">{eff.fileFormat.toUpperCase()}</span></div>
-                    <div>Nombre: <span className="font-mono">{eff.fileName}</span></div>
+          {/* ── Header strip ── */}
+          <div
+            className="flex items-center justify-between px-5 py-3 border-b shrink-0"
+            style={{ borderTopLeftRadius: 'inherit', borderTopRightRadius: 'inherit' }}
+          >
+            <div className="flex items-center gap-2">
+              <Send className="w-4 h-4" style={{ color: company.primaryColor }} />
+              <span className="font-semibold text-sm">Confirmar envío</span>
+              <span className="text-xs text-muted-foreground hidden sm:inline">
+                — Revisá el documento y los datos antes de confirmar
+              </span>
+            </div>
+          </div>
+
+          {/* ── Body: two columns ── */}
+          <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
+
+            {/* LEFT — live document preview */}
+            <div className="flex-1 min-h-0 border-b lg:border-b-0 lg:border-r overflow-hidden bg-slate-100">
+              <div className="h-full overflow-y-auto">
+                <div className="py-4 px-2 sm:px-4 flex justify-center">
+                  {/* Scale-down wrapper so the A4 preview fits neatly */}
+                  <div className="w-full max-w-[640px] origin-top">
+                    <BudgetPreview />
                   </div>
                 </div>
-
-                {willDrive && (
-                  <div className="space-y-1 p-3 border rounded-md bg-blue-50/50">
-                    <div className="font-medium flex items-center gap-2 text-blue-700">
-                      <HardDrive className="w-4 h-4" />
-                      Guardar en Google Drive
-                    </div>
-                    <div className="text-muted-foreground">
-                      Ruta: <code className="bg-muted px-1 py-0.5 rounded">{drivePath}/{eff.fileName}</code>
-                    </div>
-                  </div>
-                )}
-
-                {willEmail && (
-                  <div className="space-y-2 p-3 border rounded-md bg-green-50/50">
-                    <div className="font-medium flex items-center gap-2 text-green-700">
-                      <Mail className="w-4 h-4" />
-                      Enviar email
-                    </div>
-                    <div className="grid grid-cols-[80px_1fr] gap-x-2 gap-y-1 text-xs">
-                      <span className="text-muted-foreground">Para:</span>
-                      <span className="font-mono break-all">{eff.emailTo}</span>
-                      {eff.emailCc && (
-                        <>
-                          <span className="text-muted-foreground">CC:</span>
-                          <span className="font-mono break-all">{eff.emailCc}</span>
-                        </>
-                      )}
-                      <span className="text-muted-foreground">Asunto:</span>
-                      <span className="break-words">{eff.emailSubject}</span>
-                    </div>
-                    <div className="mt-2">
-                      <div className="text-xs text-muted-foreground mb-1">Mensaje:</div>
-                      <pre className="text-xs whitespace-pre-wrap bg-background border rounded p-2 max-h-40 overflow-y-auto font-sans">
-{eff.emailBody}
-                      </pre>
-                    </div>
-                  </div>
-                )}
               </div>
-            );
-          })()}
+            </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPendingAction(null)} disabled={isRunning}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleConfirmSend}
-              disabled={isRunning}
-              className="text-white"
-              style={{ backgroundColor: company.primaryColor }}
-            >
-              <Send className="w-4 h-4 mr-2" />
-              Confirmar y enviar
-            </Button>
-          </DialogFooter>
+            {/* RIGHT — delivery details + actions */}
+            {pendingAction && (() => {
+              const eff = settingsForAction(pendingAction);
+              const willDrive = eff.saveToDrive;
+              const willEmail = eff.sendEmail;
+              return (
+                <div className="w-full lg:w-80 xl:w-96 shrink-0 flex flex-col">
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3 text-sm">
+
+                    {/* File */}
+                    <div className="rounded-xl border bg-muted/30 p-3 space-y-1">
+                      <div className="font-medium flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground mb-2">
+                        <FileText className="w-3.5 h-3.5" />
+                        Archivo a generar
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Formato</span>
+                        <span className="font-mono font-medium">{eff.fileFormat.toUpperCase()}</span>
+                      </div>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-muted-foreground shrink-0">Nombre</span>
+                        <span className="font-mono text-xs text-right break-all">{eff.fileName}</span>
+                      </div>
+                    </div>
+
+                    {/* Drive */}
+                    {willDrive && (
+                      <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 space-y-1">
+                        <div className="font-medium flex items-center gap-2 text-xs uppercase tracking-wide text-blue-600 mb-2">
+                          <HardDrive className="w-3.5 h-3.5" />
+                          Google Drive
+                        </div>
+                        <div className="text-xs text-muted-foreground break-all">
+                          <code className="bg-white/80 px-1.5 py-0.5 rounded border border-blue-100">
+                            {drivePath}/{eff.fileName}
+                          </code>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Email */}
+                    {willEmail && (
+                      <div className="rounded-xl border border-green-100 bg-green-50/60 p-3 space-y-2">
+                        <div className="font-medium flex items-center gap-2 text-xs uppercase tracking-wide text-green-700 mb-2">
+                          <Mail className="w-3.5 h-3.5" />
+                          Email
+                        </div>
+                        <div className="space-y-1 text-xs">
+                          <div className="flex gap-2">
+                            <span className="text-muted-foreground w-10 shrink-0">Para</span>
+                            <span className="font-mono break-all">{eff.emailTo}</span>
+                          </div>
+                          {eff.emailCc && (
+                            <div className="flex gap-2">
+                              <span className="text-muted-foreground w-10 shrink-0">CC</span>
+                              <span className="font-mono break-all">{eff.emailCc}</span>
+                            </div>
+                          )}
+                          <div className="flex gap-2">
+                            <span className="text-muted-foreground w-10 shrink-0">Asunto</span>
+                            <span className="break-words">{eff.emailSubject}</span>
+                          </div>
+                        </div>
+                        <div className="pt-1">
+                          <div className="text-xs text-muted-foreground mb-1">Mensaje</div>
+                          <pre className="text-xs whitespace-pre-wrap bg-white/80 border border-green-100 rounded-lg p-2 max-h-32 overflow-y-auto font-sans leading-relaxed">
+{eff.emailBody}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Sticky action buttons */}
+                  <div className="border-t p-4 space-y-2 shrink-0 bg-background">
+                    <Button
+                      onClick={handleConfirmSend}
+                      disabled={isRunning}
+                      className="w-full text-white shadow-sm"
+                      style={{ backgroundColor: company.primaryColor }}
+                    >
+                      <Send className="w-4 h-4 mr-2" />
+                      Confirmar y enviar
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setPendingAction(null)}
+                      disabled={isRunning}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
         </DialogContent>
       </Dialog>
     </Card>
