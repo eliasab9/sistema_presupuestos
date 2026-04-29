@@ -11,11 +11,11 @@ import { CustomerManager } from '@/components/customers/customer-manager';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Card, CardContent } from '@/components/ui/card';
-import { 
-  FilePlus, 
-  Copy, 
-  Trash2, 
-  FileDown, 
+import {
+  FilePlus,
+  Copy,
+  Trash2,
+  FileDown,
   FileText,
   Menu,
   X,
@@ -24,12 +24,14 @@ import {
   Building2,
   Wrench,
   Package,
+  ClipboardList,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToPDF, exportToDOCX, exportToPDFBlob, exportNewEquipmentToPDF } from '@/lib/document/export-pdf';
 import { registerNewEquipmentBudgetInSheets, registerRepairBudgetInSheets } from '@/lib/delivery/sheets-service';
 import { clearDraft } from '@/lib/storage/budgets';
 import { GoogleDriveUploadButton } from '@/components/ui/google-drive-upload-button';
+import { BudgetHistoryPage } from '@/components/budget-history/budget-history-page';
 import type { Customer, CompanyId, BudgetType } from '@/types/budget';
 import { COMPANIES } from '@/types/budget';
 import {
@@ -38,7 +40,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 
-type AppView = 'company' | 'budget-type' | 'customers' | 'budget' | 'new-equipment';
+type AppView = 'company' | 'budget-type' | 'customers' | 'budget' | 'new-equipment' | 'history';
 
 function BudgetApp() {
   const { budget, resetBudget, refreshBudgetNumber, loadBudget, setCustomer, setCompany } = useBudget();
@@ -295,6 +297,12 @@ function BudgetApp() {
                 <p className="text-xs text-muted-foreground">{selectedCompany.subtitle}</p>
               </div>
             </button>
+            <div className="ml-auto">
+              <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setCurrentView('history')}>
+                <ClipboardList className="h-4 w-4 mr-1.5" />
+                Estado
+              </Button>
+            </div>
           </div>
         </header>
 
@@ -396,6 +404,12 @@ function BudgetApp() {
             </button>
           </div>
         </header>
+        <div className="flex items-center justify-end px-4 py-2 border-b bg-slate-50/60">
+          <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setCurrentView('history')}>
+            <ClipboardList className="h-4 w-4 mr-1.5" />
+            Estado de presupuestos
+          </Button>
+        </div>
         <CustomerManager
           company={selectedCompany}
           onSelectCustomer={handleSelectCustomer}
@@ -499,6 +513,9 @@ function BudgetApp() {
                     <Button variant="outline" className="w-full justify-start rounded-xl" onClick={handleBackToCustomers}>
                       <Users className="h-4 w-4 mr-2" />Ver Clientes
                     </Button>
+                    <Button variant="outline" className="w-full justify-start rounded-xl" onClick={() => setCurrentView('history')}>
+                      <ClipboardList className="h-4 w-4 mr-2" />Estado de presupuestos
+                    </Button>
                     <Button variant="outline" className="w-full justify-start rounded-xl" onClick={() => {
                       newEquipmentContext.resetBudget();
                       newEquipmentContext.setCompany(selectedCompanyId);
@@ -556,6 +573,16 @@ function BudgetApp() {
     );
   }
 
+  // History view
+  if (currentView === 'history') {
+    return (
+      <BudgetHistoryPage
+        company={COMPANIES[selectedCompanyId]}
+        onBack={() => setCurrentView('budget-type')}
+      />
+    );
+  }
+
   // Budget editor view (Reparación)
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -601,6 +628,10 @@ function BudgetApp() {
             <Button variant="outline" size="sm" className="rounded-xl" onClick={handleBackToCustomers}>
               <Users className="h-4 w-4 mr-1.5" />
               Clientes
+            </Button>
+            <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setCurrentView('history')}>
+              <ClipboardList className="h-4 w-4 mr-1.5" />
+              Estado
             </Button>
             <Button variant="outline" size="sm" className="rounded-xl" onClick={handleNewBudget}>
               <FilePlus className="h-4 w-4 mr-1.5" />
@@ -660,6 +691,9 @@ function BudgetApp() {
                   </Button>
                   <Button variant="outline" className="w-full justify-start rounded-xl" onClick={handleBackToCustomers}>
                     <Users className="h-4 w-4 mr-2" />Ver Clientes
+                  </Button>
+                  <Button variant="outline" className="w-full justify-start rounded-xl" onClick={() => setCurrentView('history')}>
+                    <ClipboardList className="h-4 w-4 mr-2" />Estado de presupuestos
                   </Button>
                   <Button variant="outline" className="w-full justify-start rounded-xl" onClick={handleNewBudget}>
                     <FilePlus className="h-4 w-4 mr-2" />Nuevo presupuesto
