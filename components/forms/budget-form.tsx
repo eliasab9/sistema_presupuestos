@@ -14,6 +14,7 @@ import { TotalsSection } from './sections/totals-section';
 import { ObservationsSection } from './sections/observations-section';
 import { CommercialConditionsSection } from './sections/commercial-conditions-section';
 import { DeliveryPanel } from '@/components/delivery/delivery-panel';
+import { BudgetHistory } from '@/components/budget-history/budget-history';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Plus, Trash2, Pencil, Check } from 'lucide-react';
@@ -147,6 +148,10 @@ export function BudgetForm() {
         <Separator />
 
         <DeliveryPanel />
+
+        <Separator />
+
+        <BudgetHistory />
       </div>
     </ScrollArea>
   );

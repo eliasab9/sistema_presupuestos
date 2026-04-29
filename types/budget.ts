@@ -189,9 +189,13 @@ export interface Budget {
   subtotalGeneral: number;
   totalTax: number;
   totalFinal: number;
+  status?: BudgetStatus; // Estado del presupuesto enviado: pendiente o aprobado.
+  sentAt?: string;       // ISO timestamp del último envío exitoso.
   createdAt: string;
   updatedAt: string;
 }
+
+export type BudgetStatus = 'pending' | 'approved';
 
 // Pricing types
 export interface LaborPricing {

@@ -1,4 +1,4 @@
-import type { Budget } from '@/types/budget';
+import type { Budget, BudgetStatus } from '@/types/budget';
 
 const STORAGE_KEY = 'bemec_budgets';
 const DRAFT_KEY = 'bemec_budget_draft';
@@ -101,6 +101,20 @@ export function saveBudget(budget: Budget): void {
 export function getBudgetById(id: string): Budget | undefined {
   const budgets = getAllBudgets();
   return budgets.find(b => b.id === id);
+}
+
+/**
+ * Update a budget's status (pending / approved)
+ */
+export function setBudgetStatus(id: string, status: BudgetStatus): Budget | null {
+  const budgets = getAllBudgets();
+  const idx = budgets.findIndex(b => b.id === id);
+  if (idx === -1) return null;
+  budgets[idx] = { ...budgets[idx], status, updatedAt: new Date().toISOString() };
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(budgets));
+  }
+  return budgets[idx];
 }
 
 /**

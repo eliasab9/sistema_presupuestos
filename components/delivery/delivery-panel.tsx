@@ -23,6 +23,14 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Select,
@@ -33,6 +41,8 @@ import {
 } from '@/components/ui/select';
 import { useBudget } from '@/lib/budget-context';
 import { COMPANIES } from '@/types/budget';
+import { saveBudget } from '@/lib/storage/budgets';
+import { toast } from 'sonner';
 import type { 
   DeliverySettings, 
   DeliveryWorkflowState, 
@@ -49,7 +59,7 @@ import { buildBudgetEmailSubject, buildBudgetEmailBody } from '@/lib/delivery/em
 import { runDeliveryWorkflow, validateDeliverySettings, retryWorkflowStep } from '@/lib/delivery/workflow';
 
 export function DeliveryPanel() {
-  const { budget, refreshBudgetNumber } = useBudget();
+  const { budget, refreshBudgetNumber, resetBudget } = useBudget();
   const company = COMPANIES[budget.companyId];
   
   // Settings state
@@ -60,6 +70,9 @@ export function DeliveryPanel() {
   const [workflowState, setWorkflowState] = useState<DeliveryWorkflowState>(() => createInitialWorkflowState());
   const [workflowResult, setWorkflowResult] = useState<DeliveryWorkflowResult | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+
+  // Preview/confirmation modal state
+  const [pendingAction, setPendingAction] = useState<null | 'full' | 'drive' | 'email'>(null);
   
   // Auto-fill settings based on budget data
   useEffect(() => {
@@ -104,74 +117,80 @@ export function DeliveryPanel() {
     return result.valid;
   }, [budget, settings]);
   
-  // Run the delivery workflow
-  const handleRunWorkflow = async () => {
+  // Build effective settings for a given action (used by modal preview + execute)
+  const settingsForAction = useCallback((action: 'full' | 'drive' | 'email'): DeliverySettings => {
+    if (action === 'drive') return { ...settings, saveToDrive: true, sendEmail: false };
+    if (action === 'email') return { ...settings, saveToDrive: false, sendEmail: true };
+    return settings;
+  }, [settings]);
+
+  // Open preview modal after validation
+  const handleRunWorkflow = () => {
     if (!validate()) return;
-    
+    setPendingAction('full');
+  };
+
+  const handleSaveToDrive = () => {
+    const driveOnly = settingsForAction('drive');
+    const validation = validateDeliverySettings(budget, driveOnly);
+    if (!validation.valid) {
+      setValidationErrors(validation.errors);
+      return;
+    }
+    setValidationErrors([]);
+    setPendingAction('drive');
+  };
+
+  const handleSendEmail = () => {
+    const emailOnly = settingsForAction('email');
+    const validation = validateDeliverySettings(budget, emailOnly);
+    if (!validation.valid) {
+      setValidationErrors(validation.errors);
+      return;
+    }
+    setValidationErrors([]);
+    setPendingAction('email');
+  };
+
+  // Execute the workflow after user confirms in the preview modal
+  const handleConfirmSend = async () => {
+    if (!pendingAction) return;
+    const effective = settingsForAction(pendingAction);
+    setPendingAction(null);
+
     setWorkflowResult(null);
     setWorkflowState(createInitialWorkflowState());
-    
+
     const result = await runDeliveryWorkflow(
       budget,
-      settings,
+      effective,
       (state) => setWorkflowState(state)
     );
 
     setWorkflowResult(result);
-    // Refrescar el número para el próximo presupuesto
-    if (result.steps.generate.success) refreshBudgetNumber();
-  };
-  
-  // Run only save to Drive
-  const handleSaveToDrive = async () => {
-    const driveOnlySettings = {
-      ...settings,
-      saveToDrive: true,
-      sendEmail: false,
-    };
-    
-    const validation = validateDeliverySettings(budget, driveOnlySettings);
-    if (!validation.valid) {
-      setValidationErrors(validation.errors);
-      return;
+
+    if (pendingAction === 'full' && result.success) {
+      // Archive sent budget as "pending" and clear form for next budget
+      try {
+        saveBudget({
+          ...budget,
+          status: 'pending',
+          sentAt: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.error('Failed to archive sent budget:', e);
+      }
+      toast.success('Presupuesto enviado y archivado como pendiente');
+      // Slight delay so the user sees the success state before the form clears
+      setTimeout(() => {
+        resetBudget();
+        setWorkflowResult(null);
+        setWorkflowState(createInitialWorkflowState());
+      }, 1500);
+    } else if (pendingAction === 'full' && result.steps.generate.success) {
+      // Partial success: file generated but a step failed. Refresh number so retries don't reuse it.
+      refreshBudgetNumber();
     }
-    
-    setWorkflowResult(null);
-    setWorkflowState(createInitialWorkflowState());
-    
-    const result = await runDeliveryWorkflow(
-      budget,
-      driveOnlySettings,
-      (state) => setWorkflowState(state)
-    );
-    
-    setWorkflowResult(result);
-  };
-  
-  // Run only send email
-  const handleSendEmail = async () => {
-    const emailOnlySettings = {
-      ...settings,
-      saveToDrive: false,
-      sendEmail: true,
-    };
-    
-    const validation = validateDeliverySettings(budget, emailOnlySettings);
-    if (!validation.valid) {
-      setValidationErrors(validation.errors);
-      return;
-    }
-    
-    setWorkflowResult(null);
-    setWorkflowState(createInitialWorkflowState());
-    
-    const result = await runDeliveryWorkflow(
-      budget,
-      emailOnlySettings,
-      (state) => setWorkflowState(state)
-    );
-    
-    setWorkflowResult(result);
   };
   
   // Retry a failed step
@@ -582,6 +601,95 @@ export function DeliveryPanel() {
           </CollapsibleContent>
         </Collapsible>
       </CardContent>
+
+      {/* Preview / confirmation modal */}
+      <Dialog open={pendingAction !== null} onOpenChange={(open) => { if (!open) setPendingAction(null); }}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="w-5 h-5" style={{ color: company.primaryColor }} />
+              Confirmar envío
+            </DialogTitle>
+            <DialogDescription>
+              Revisá los datos antes de {pendingAction === 'drive' ? 'guardar en Drive' : pendingAction === 'email' ? 'enviar por email' : 'guardar y enviar'}.
+            </DialogDescription>
+          </DialogHeader>
+
+          {pendingAction && (() => {
+            const eff = settingsForAction(pendingAction);
+            const willDrive = eff.saveToDrive;
+            const willEmail = eff.sendEmail;
+            return (
+              <div className="space-y-4 text-sm">
+                <div className="space-y-1 p-3 border rounded-md bg-muted/30">
+                  <div className="font-medium flex items-center gap-2">
+                    <FileText className="w-4 h-4" />
+                    Archivo
+                  </div>
+                  <div className="text-muted-foreground">
+                    <div>Formato: <span className="font-mono">{eff.fileFormat.toUpperCase()}</span></div>
+                    <div>Nombre: <span className="font-mono">{eff.fileName}</span></div>
+                  </div>
+                </div>
+
+                {willDrive && (
+                  <div className="space-y-1 p-3 border rounded-md bg-blue-50/50">
+                    <div className="font-medium flex items-center gap-2 text-blue-700">
+                      <HardDrive className="w-4 h-4" />
+                      Guardar en Google Drive
+                    </div>
+                    <div className="text-muted-foreground">
+                      Ruta: <code className="bg-muted px-1 py-0.5 rounded">{drivePath}/{eff.fileName}</code>
+                    </div>
+                  </div>
+                )}
+
+                {willEmail && (
+                  <div className="space-y-2 p-3 border rounded-md bg-green-50/50">
+                    <div className="font-medium flex items-center gap-2 text-green-700">
+                      <Mail className="w-4 h-4" />
+                      Enviar email
+                    </div>
+                    <div className="grid grid-cols-[80px_1fr] gap-x-2 gap-y-1 text-xs">
+                      <span className="text-muted-foreground">Para:</span>
+                      <span className="font-mono break-all">{eff.emailTo}</span>
+                      {eff.emailCc && (
+                        <>
+                          <span className="text-muted-foreground">CC:</span>
+                          <span className="font-mono break-all">{eff.emailCc}</span>
+                        </>
+                      )}
+                      <span className="text-muted-foreground">Asunto:</span>
+                      <span className="break-words">{eff.emailSubject}</span>
+                    </div>
+                    <div className="mt-2">
+                      <div className="text-xs text-muted-foreground mb-1">Mensaje:</div>
+                      <pre className="text-xs whitespace-pre-wrap bg-background border rounded p-2 max-h-40 overflow-y-auto font-sans">
+{eff.emailBody}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingAction(null)} disabled={isRunning}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmSend}
+              disabled={isRunning}
+              className="text-white"
+              style={{ backgroundColor: company.primaryColor }}
+            >
+              <Send className="w-4 h-4 mr-2" />
+              Confirmar y enviar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
