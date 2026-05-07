@@ -1,16 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { refreshAccessToken } from '@/lib/google-drive';
+import { requireSheetsConfig } from '@/lib/config';
+import { createLogger } from '@/lib/logger';
 
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID!;
+const log = createLogger('sheets/register');
+
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
-async function resolveSheetName(accessToken: string, gid: number): Promise<string> {
-  const res = await fetch(`${SHEETS_API}/${SPREADSHEET_ID}`, {
+const registerSchema = z.object({
+  companyId:    z.enum(['bemec', 'bamore']),
+  budgetNumber: z.string().min(1, 'budgetNumber es requerido'),
+  clientName:   z.string().optional(),
+  budgetDate:   z.string().optional(),
+  pideNumber:   z.string().optional(),
+  merchandise:  z.string().optional(),
+  responsable:  z.string().optional(),
+});
+
+async function resolveSheetName(accessToken: string, spreadsheetId: string, gid: number): Promise<string> {
+  const res = await fetch(`${SHEETS_API}/${spreadsheetId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) {
     const errText = await res.text();
-    console.error('[resolveSheetName] Google API error:', res.status, errText);
+    log.error('Google Sheets metadata error', { status: res.status, body: errText });
     throw new Error(`No se pudo obtener metadata (${res.status}): ${errText}`);
   }
   const data = await res.json();
@@ -31,11 +45,12 @@ async function resolveSheetName(accessToken: string, gid: number): Promise<strin
  */
 async function findTargetRow(
   accessToken: string,
+  spreadsheetId: string,
   sheetName: string,
   budgetNumber: string
 ): Promise<number> {
   const range = encodeURIComponent(`'${sheetName}'!A:B`);
-  const res = await fetch(`${SHEETS_API}/${SPREADSHEET_ID}/values/${range}`, {
+  const res = await fetch(`${SHEETS_API}/${spreadsheetId}/values/${range}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) throw new Error(`Error leyendo columnas A:B: ${await res.text()}`);
@@ -66,67 +81,60 @@ async function findTargetRow(
  *
  * Registra un presupuesto en la fila correspondiente a su número.
  * Busca la fila donde A = budgetNumber y B está vacía, y completa las columnas B–I.
- *
- * Body JSON:
- *   companyId    : 'bemec' | 'bamore'
- *   budgetNumber : string
- *   clientName   : string
- *   budgetDate   : string
- *   pideNumber   : string
- *   merchandise  : string
- *   responsable  : string
  */
 export async function POST(request: NextRequest) {
-  if (!SPREADSHEET_ID) {
-    return NextResponse.json({ success: false, error: 'SPREADSHEET_ID no configurado' }, { status: 503 });
+  let sheetsConfig: ReturnType<typeof requireSheetsConfig>;
+  try {
+    sheetsConfig = requireSheetsConfig();
+  } catch (e) {
+    return NextResponse.json({ success: false, error: String(e) }, { status: 503 });
   }
-  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
-  if (!refreshToken) {
-    return NextResponse.json({ success: false, error: 'GOOGLE_OAUTH_REFRESH_TOKEN no configurado' }, { status: 503 });
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ success: false, error: 'Body JSON inválido' }, { status: 400 });
   }
+
+  const parsed = registerSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors.map((e) => e.message).join(', ') },
+      { status: 400 }
+    );
+  }
+  const { companyId, budgetNumber, clientName, budgetDate, pideNumber, merchandise, responsable } = parsed.data;
+
+  const gid = companyId === 'bamore' ? sheetsConfig.SHEET_GID_BAMORE : sheetsConfig.SHEET_GID_BEMEC;
 
   try {
-    const body = await request.json() as {
-      companyId: string;
-      budgetNumber: string;
-      clientName?: string;
-      budgetDate?: string;
-      pideNumber?: string;
-      merchandise?: string;
-      responsable?: string;
-    };
-    const { companyId, budgetNumber, clientName, budgetDate, pideNumber, merchandise, responsable } = body;
-
-    const gid = companyId === 'bamore'
-      ? Number(process.env.SHEET_GID_BAMORE)
-      : Number(process.env.SHEET_GID_BEMEC);
-
     // Fecha de hoy DD/MM/YYYY
     const now = new Date();
     const fechaSolicitud = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
 
-    const { access_token } = await refreshAccessToken(refreshToken);
-    const sheetName = await resolveSheetName(access_token, gid);
+    const { access_token } = await refreshAccessToken(sheetsConfig.GOOGLE_OAUTH_REFRESH_TOKEN);
+    const sheetName = await resolveSheetName(access_token, sheetsConfig.SPREADSHEET_ID, gid);
 
     // Encontrar la fila donde A = budgetNumber y B está vacía
-    const rowNumber = await findTargetRow(access_token, sheetName, budgetNumber);
+    const rowNumber = await findTargetRow(access_token, sheetsConfig.SPREADSHEET_ID, sheetName, budgetNumber);
 
     // Columnas A–I: A ya tiene el número pre-populado, completamos el resto
     const row = [
-      budgetNumber   ?? '',  // A: Nº de Solicitud (confirma/completa)
-      fechaSolicitud,        // B: Fecha de Solicitud ← esto es lo que "registra" la fila
+      budgetNumber   ?? '',   // A: Nº de Solicitud (confirma/completa)
+      fechaSolicitud,         // B: Fecha de Solicitud ← esto es lo que "registra" la fila
       responsable    ?? 'Elías', // C: Responsable
-      'Email',               // D: Medio
-      clientName     ?? '',  // E: Cliente
-      budgetDate     ?? '',  // F: Fecha de cotización
-      '',                    // G: Fecha OC (vacío)
-      pideNumber     ?? '',  // H: Nº PIDE
-      merchandise    ?? '',  // I: Mercadería Cotizada
+      'Email',                // D: Medio
+      clientName     ?? '',   // E: Cliente
+      budgetDate     ?? '',   // F: Fecha de cotización
+      '',                     // G: Fecha OC (vacío)
+      pideNumber     ?? '',   // H: Nº PIDE
+      merchandise    ?? '',   // I: Mercadería Cotizada
     ];
 
     const updateRange = encodeURIComponent(`'${sheetName}'!A${rowNumber}:I${rowNumber}`);
     const updateRes = await fetch(
-      `${SHEETS_API}/${SPREADSHEET_ID}/values/${updateRange}?valueInputOption=USER_ENTERED`,
+      `${SHEETS_API}/${sheetsConfig.SPREADSHEET_ID}/values/${updateRange}?valueInputOption=USER_ENTERED`,
       {
         method: 'PUT',
         headers: {
@@ -141,9 +149,10 @@ export async function POST(request: NextRequest) {
       throw new Error(`Error al escribir en fila ${rowNumber}: ${await updateRes.text()}`);
     }
 
+    log.info('Budget registered', { companyId, budgetNumber, rowNumber });
     return NextResponse.json({ success: true, rowNumber, budgetNumber });
   } catch (error) {
-    console.error('[Sheets register] Error:', error);
+    log.error('Failed to register budget', { error: String(error) });
     return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
   }
 }

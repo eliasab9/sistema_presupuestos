@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ClipboardList, CheckCircle2, Clock, Trash2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -39,6 +40,7 @@ function formatARS(n: number): string {
 export function BudgetHistory() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [filter, setFilter] = useState<Filter>('pending');
+  const [budgetToDelete, setBudgetToDelete] = useState<Budget | null>(null);
 
   const refresh = useCallback(() => {
     setBudgets(getAllBudgets());
@@ -78,8 +80,13 @@ export function BudgetHistory() {
   };
 
   const handleDelete = (b: Budget) => {
-    if (!confirm(`¿Eliminar el presupuesto N° ${b.meta.number} del historial?`)) return;
-    deleteBudget(b.id);
+    setBudgetToDelete(b);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!budgetToDelete) return;
+    deleteBudget(budgetToDelete.id);
+    setBudgetToDelete(null);
     refresh();
     toast.success('Presupuesto eliminado del historial');
   };
@@ -186,6 +193,16 @@ export function BudgetHistory() {
           </div>
         )}
       </CardContent>
+
+      <ConfirmDialog
+        open={budgetToDelete !== null}
+        onOpenChange={(open) => { if (!open) setBudgetToDelete(null); }}
+        title={`¿Eliminar presupuesto N° ${budgetToDelete?.meta.number}?`}
+        description="Esta acción no se puede deshacer. El presupuesto se eliminará del historial local."
+        confirmLabel="Eliminar"
+        destructive
+        onConfirm={handleConfirmDelete}
+      />
     </Card>
   );
 }

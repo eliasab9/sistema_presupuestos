@@ -1,21 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
+import { z } from 'zod';
+import { env } from '@/lib/config';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('email/send');
 
 export const maxDuration = 30;
 
-/**
- * Configuración por empresa.
- * Cada empresa tiene su propia cuenta de Gmail y su propio Reply-To.
- *
- * Variables de entorno requeridas:
- *   GMAIL_USER_BEMEC   = cotizacionesbemec@gmail.com
- *   GMAIL_PASS_BEMEC   = "xxxx xxxx xxxx xxxx"  ← contraseña de aplicación
- *   GMAIL_REPLY_BEMEC  = eagustin@bemec.ar
- *
- *   GMAIL_USER_BAMORE  = cotizacionesbamore@gmail.com
- *   GMAIL_PASS_BAMORE  = "xxxx xxxx xxxx xxxx"  ← contraseña de aplicación
- *   GMAIL_REPLY_BAMORE = ventas@bamore.com.ar
- */
+const sendEmailSchema = z.object({
+  companyId:               z.enum(['bemec', 'bamore']).default('bemec'),
+  to:                      z.string().email('El campo "to" debe ser un email válido'),
+  toName:                  z.string().optional(),
+  subject:                 z.string().min(1, 'El asunto no puede estar vacío'),
+  body:                    z.string().min(1, 'El cuerpo no puede estar vacío'),
+  cc:                      z.string().optional(),
+  attachmentName:          z.string().optional(),
+  signatureAttachmentName: z.string().optional(),
+});
+
 interface CompanyMailConfig {
   user: string;
   pass: string;
@@ -23,30 +26,27 @@ interface CompanyMailConfig {
   replyTo: string;
 }
 
-function getCompanyConfig(companyId: string): CompanyMailConfig | null {
+function getCompanyConfig(companyId: 'bemec' | 'bamore'): CompanyMailConfig | null {
   if (companyId === 'bemec') {
-    const user = process.env.GMAIL_USER_BEMEC;
-    const pass = process.env.GMAIL_PASS_BEMEC;
+    const user = env.GMAIL_USER_BEMEC;
+    const pass = env.GMAIL_PASS_BEMEC;
     if (!user || !pass) return null;
     return {
       user,
       pass,
       fromName: 'BEMEC - Cotizaciones',
-      replyTo: process.env.GMAIL_REPLY_BEMEC || 'eagustin@bemec.ar',
+      replyTo: env.GMAIL_REPLY_BEMEC ?? 'eagustin@bemec.ar',
     };
   }
-  if (companyId === 'bamore') {
-    const user = process.env.GMAIL_USER_BAMORE;
-    const pass = process.env.GMAIL_PASS_BAMORE;
-    if (!user || !pass) return null;
-    return {
-      user,
-      pass,
-      fromName: 'BAMORE S.R.L. - Cotizaciones',
-      replyTo: process.env.GMAIL_REPLY_BAMORE || 'ventas@bamore.com.ar',
-    };
-  }
-  return null;
+  const user = env.GMAIL_USER_BAMORE;
+  const pass = env.GMAIL_PASS_BAMORE;
+  if (!user || !pass) return null;
+  return {
+    user,
+    pass,
+    fromName: 'BAMORE S.R.L. - Cotizaciones',
+    replyTo: env.GMAIL_REPLY_BAMORE ?? 'ventas@bamore.com.ar',
+  };
 }
 
 /**
@@ -66,22 +66,27 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
 
-    const companyId  = (formData.get('companyId') as string | null) || 'bemec';
-    const to         = formData.get('to') as string | null;
-    const toName     = formData.get('toName') as string | null;
-    const subject    = formData.get('subject') as string | null;
-    const body       = formData.get('body') as string | null;
-    const ccRaw      = formData.get('cc') as string | null;
-    const attachment = formData.get('attachment') as Blob | null;
-    const attachmentName = formData.get('attachmentName') as string | null;
+    const rawFields = {
+      companyId:               formData.get('companyId') ?? 'bemec',
+      to:                      formData.get('to'),
+      toName:                  formData.get('toName') ?? undefined,
+      subject:                 formData.get('subject'),
+      body:                    formData.get('body'),
+      cc:                      formData.get('cc') ?? undefined,
+      attachmentName:          formData.get('attachmentName') ?? undefined,
+      signatureAttachmentName: formData.get('signatureAttachmentName') ?? undefined,
+    };
 
-    // Validaciones básicas
-    if (!to || !subject || !body) {
+    const parsed = sendEmailSchema.safeParse(rawFields);
+    if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: 'Faltan campos requeridos: to, subject, body' },
+        { success: false, error: parsed.error.errors.map((e) => e.message).join(', ') },
         { status: 400 }
       );
     }
+    const { companyId, to, toName, subject, body, cc: ccRaw, attachmentName, signatureAttachmentName } = parsed.data;
+    const attachment = formData.get('attachment') as Blob | null;
+    const signatureAttachment = formData.get('signatureAttachment') as Blob | null;
 
     // Obtener config de la empresa
     const config = getCompanyConfig(companyId);
@@ -103,7 +108,7 @@ export async function POST(request: NextRequest) {
       secure: false, // STARTTLS
       auth: {
         user: config.user,
-        pass: config.pass,   // Contraseña de aplicación (NO la contraseña normal)
+        pass: config.pass, // Contraseña de aplicación
       },
     });
 
@@ -112,7 +117,7 @@ export async function POST(request: NextRequest) {
       ? ccRaw.split(',').map((e) => e.trim()).filter(Boolean)
       : [];
 
-    // Construir adjunto si existe
+    // Construir adjuntos
     const attachments: nodemailer.SendMailOptions['attachments'] = [];
     if (attachment && attachmentName) {
       const buffer = Buffer.from(await attachment.arrayBuffer());
@@ -124,11 +129,17 @@ export async function POST(request: NextRequest) {
           : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       });
     }
+    // Adjunto de firma (logo/imagen del vendedor)
+    if (signatureAttachment && signatureAttachmentName) {
+      const buffer = Buffer.from(await signatureAttachment.arrayBuffer());
+      attachments.push({
+        filename: signatureAttachmentName,
+        content: buffer,
+      });
+    }
 
-    // Armar destinatario
+    // Armar destinatario y enviar
     const toFormatted = toName ? `${toName} <${to}>` : to;
-
-    // Enviar
     const info = await transporter.sendMail({
       from: `"${config.fromName}" <${config.user}>`,
       replyTo: config.replyTo,
@@ -139,12 +150,12 @@ export async function POST(request: NextRequest) {
       attachments,
     });
 
+    log.info('Email sent', { companyId, to, subject, messageId: info.messageId });
     return NextResponse.json({ success: true, messageId: info.messageId });
 
   } catch (error) {
-    console.error('[Email API] Error:', error);
+    log.error('Failed to send email', { error: String(error) });
 
-    // Error legible para el usuario
     const message = error instanceof Error ? error.message : 'Error interno';
     const isAuthError = message.includes('535') || message.includes('auth') || message.includes('credentials');
 

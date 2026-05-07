@@ -29,6 +29,28 @@ export async function fetchNextBudgetNumber(
 }
 
 /**
+ * Reserva atómicamente el siguiente número de presupuesto (read + write en un solo request).
+ * Escribe el número en la columna A de la próxima fila disponible para reclamarla.
+ * Devuelve el número reservado, o null si el servicio no está disponible.
+ */
+export async function reserveBudgetNumber(companyId: string): Promise<string | null> {
+  try {
+    const res = await fetch('/api/sheets/reserve-number', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId }),
+    });
+    const data = (await res.json()) as { success: boolean; reservedNumber?: string; error?: string };
+    if (data.success && data.reservedNumber) return data.reservedNumber;
+    console.warn('[Sheets] reserveBudgetNumber falló:', data.error);
+    return null;
+  } catch (e) {
+    console.warn('[Sheets] reserveBudgetNumber error de red:', e);
+    return null;
+  }
+}
+
+/**
  * Construye el texto de "Mercadería Cotizada" para un presupuesto de reparación.
  */
 function buildRepairMerchandise(budget: Budget): string {

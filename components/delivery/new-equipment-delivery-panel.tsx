@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Send,
   HardDrive,
@@ -13,7 +13,10 @@ import {
   FolderOpen,
   ChevronDown,
   ChevronUp,
+  Paperclip,
+  Save,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,11 +28,9 @@ import { useNewEquipment } from '@/lib/new-equipment-context';
 import { COMPANIES } from '@/types/budget';
 import type { DeliverySettings, DeliveryWorkflowState, DeliveryWorkflowResult, DeliveryStep } from '@/types/delivery';
 import { getDefaultDeliverySettings, createInitialWorkflowState } from '@/types/delivery';
+
 import { exportNewEquipmentToPDFBlob } from '@/lib/document/export-pdf';
-import { uploadFileToDrive } from '@/lib/delivery/google-drive';
-import { sendBudgetEmail } from '@/lib/delivery/email-service';
-import type { EmailSendResult } from '@/types/delivery';
-import { parseEmailList } from '@/lib/delivery/email-builder';
+import { runDeliveryWorkflow } from '@/lib/delivery/workflow';
 import { registerNewEquipmentBudgetInSheets } from '@/lib/delivery/sheets-service';
 import type { NewEquipmentBudget } from '@/types/budget';
 
@@ -60,7 +61,9 @@ function buildNewEquipmentEmailBody(budget: NewEquipmentBudget): string {
   const itemSummary = budget.items.length > 0
     ? budget.items.map(i => `${i.quantity > 1 ? `${i.quantity}x ` : ''}${i.type.replace(/_/g, ' ')}${i.brand ? ` ${i.brand}` : ''}${i.model ? ` ${i.model}` : ''}`).join(', ')
     : 'los equipos detallados en el presupuesto';
-  return `Estimados, adjunto aquí el presupuesto por ${itemSummary}.`;
+  const body = `Estimados, adjunto aquí el presupuesto por ${itemSummary}.`;
+  const signature = budget.meta.sellerSignature?.trim();
+  return signature ? `${body}\n\n${signature}` : body;
 }
 
 function getStepDisplay(step: DeliveryStep) {
@@ -81,7 +84,7 @@ function getStepDisplay(step: DeliveryStep) {
 }
 
 export function NewEquipmentDeliveryPanel() {
-  const { budget, refreshBudgetNumber } = useNewEquipment();
+  const { budget, setMeta, refreshBudgetNumber } = useNewEquipment();
   const company = COMPANIES[budget.companyId];
 
   const [settings, setSettings] = useState<DeliverySettings>(() => getDefaultDeliverySettings());
@@ -89,6 +92,19 @@ export function NewEquipmentDeliveryPanel() {
   const [workflowState, setWorkflowState] = useState<DeliveryWorkflowState>(() => createInitialWorkflowState());
   const [workflowResult, setWorkflowResult] = useState<DeliveryWorkflowResult | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+
+  // Signature editor state
+  const [sigText, setSigText] = useState(budget.meta.sellerSignature ?? '');
+  const [sigFileName, setSigFileName] = useState(budget.meta.sellerSignatureFileName ?? '');
+  const [sigFile, setSigFile] = useState<File | null>(null);
+  const [savingSig, setSavingSig] = useState(false);
+  const sigFileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setSigText(budget.meta.sellerSignature ?? '');
+    setSigFileName(budget.meta.sellerSignatureFileName ?? '');
+    setSigFile(null);
+  }, [budget.meta.sellerId]);
 
   // Auto-fill settings from budget data
   useEffect(() => {
@@ -105,7 +121,7 @@ export function NewEquipmentDeliveryPanel() {
       },
     }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [budget.id, budget.customer.email, budget.companyId]);
+  }, [budget.id, budget.customer.email, budget.companyId, budget.meta.responsable, budget.meta.sellerSignature]);
 
   const validate = useCallback(() => {
     const errors: string[] = [];
@@ -130,114 +146,71 @@ export function NewEquipmentDeliveryPanel() {
     if (!validate()) return;
 
     setWorkflowResult(null);
-    const initState = createInitialWorkflowState();
-    initState.isRunning = true;
-    setWorkflowState({ ...initState });
 
-    const result: DeliveryWorkflowResult = {
-      success: false,
-      partialSuccess: false,
-      steps: {
-        generate: { success: false },
-        drive: { success: false, skipped: !settings.saveToDrive },
-        email: { success: false, skipped: !settings.sendEmail },
-      },
-      generatedFile: null,
-      summary: '',
-    };
-
-    let fileBlob: Blob | null = null;
-
-    // Step 1: Generate PDF
-    setWorkflowState(prev => ({ ...prev, currentStep: 'generate', steps: { ...prev.steps, generate: { ...prev.steps.generate, status: 'running', startedAt: new Date().toISOString() } } }));
-    try {
-      fileBlob = await exportNewEquipmentToPDFBlob(budget);
-      result.generatedFile = { id: `file_${Date.now()}`, name: settings.fileName, format: 'pdf', blob: fileBlob, size: fileBlob.size, createdAt: new Date().toISOString(), budgetId: budget.id, budgetNumber: budget.meta.number };
-      result.steps.generate.success = true;
-      setWorkflowState(prev => ({ ...prev, generatedFile: result.generatedFile, steps: { ...prev.steps, generate: { ...prev.steps.generate, status: 'success', completedAt: new Date().toISOString(), message: `Archivo generado: ${settings.fileName}` } } }));
-      // Registrar en Sheets
-      await registerNewEquipmentBudgetInSheets(budget);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Error al generar el archivo';
-      result.steps.generate.error = msg;
-      setWorkflowState(prev => ({ ...prev, isRunning: false, steps: { ...prev.steps, generate: { ...prev.steps.generate, status: 'error', completedAt: new Date().toISOString(), error: msg } } }));
-      result.summary = `Error en generación: ${msg}`;
-      setWorkflowResult(result);
-      return;
-    }
-
-    // Step 2: Save to Drive
-    if (settings.saveToDrive && fileBlob) {
-      setWorkflowState(prev => ({ ...prev, currentStep: 'drive', steps: { ...prev.steps, drive: { ...prev.steps.drive, status: 'running', startedAt: new Date().toISOString() } } }));
-      try {
-        const subfolders: string[] = [];
-        if (settings.driveDestination.yearSubfolder) subfolders.push(new Date().getFullYear().toString());
-        if (settings.driveDestination.clientSubfolder && budget.customer.name) subfolders.push(budget.customer.name);
-        const uploadResult = await uploadFileToDrive(fileBlob, settings.fileName, company.driveNewEquipmentFolderId ?? company.driveFolderId, subfolders.join('/'));
-        if (uploadResult.success) {
-          result.steps.drive.success = true;
-          const displayPath = [`Presupuestos ${company.name}`, ...subfolders, settings.fileName].join('/');
-          setWorkflowState(prev => ({ ...prev, steps: { ...prev.steps, drive: { ...prev.steps.drive, status: 'success', completedAt: new Date().toISOString(), message: `Guardado en: ${displayPath}` } } }));
-        } else {
-          result.steps.drive.error = uploadResult.error;
-          setWorkflowState(prev => ({ ...prev, steps: { ...prev.steps, drive: { ...prev.steps.drive, status: 'error', completedAt: new Date().toISOString(), error: uploadResult.error } } }));
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Error al guardar en Drive';
-        result.steps.drive.error = msg;
-        setWorkflowState(prev => ({ ...prev, steps: { ...prev.steps, drive: { ...prev.steps.drive, status: 'error', completedAt: new Date().toISOString(), error: msg } } }));
+    const result = await runDeliveryWorkflow(
+      budget,
+      settings,
+      (newState) => setWorkflowState(newState),
+      {
+        generateFile: () => exportNewEquipmentToPDFBlob(budget),
+        registerInSheets: () => registerNewEquipmentBudgetInSheets(budget),
       }
-    } else {
-      setWorkflowState(prev => ({ ...prev, steps: { ...prev.steps, drive: { ...prev.steps.drive, status: 'skipped', message: 'Omitido por configuración' } } }));
-    }
-
-    // Step 3: Send email
-    if (settings.sendEmail && fileBlob) {
-      setWorkflowState(prev => ({ ...prev, currentStep: 'email', steps: { ...prev.steps, email: { ...prev.steps.email, status: 'running', startedAt: new Date().toISOString() } } }));
-      try {
-        const ccEmails = settings.emailCc ? parseEmailList(settings.emailCc) : undefined;
-        const emailResult: EmailSendResult = await sendBudgetEmail(
-          settings.emailTo,
-          budget.customer.attention || budget.customer.name,
-          settings.emailSubject,
-          settings.emailBody,
-          { name: settings.fileName, content: fileBlob },
-          ccEmails,
-          budget.companyId
-        );
-        if (emailResult.success) {
-          result.steps.email.success = true;
-          setWorkflowState(prev => ({ ...prev, steps: { ...prev.steps, email: { ...prev.steps.email, status: 'success', completedAt: new Date().toISOString(), message: `Email enviado a: ${settings.emailTo}` } } }));
-        } else {
-          result.steps.email.error = emailResult.error;
-          setWorkflowState(prev => ({ ...prev, steps: { ...prev.steps, email: { ...prev.steps.email, status: 'error', completedAt: new Date().toISOString(), error: emailResult.error } } }));
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Error al enviar email';
-        result.steps.email.error = msg;
-        setWorkflowState(prev => ({ ...prev, steps: { ...prev.steps, email: { ...prev.steps.email, status: 'error', completedAt: new Date().toISOString(), error: msg } } }));
-      }
-    } else {
-      setWorkflowState(prev => ({ ...prev, steps: { ...prev.steps, email: { ...prev.steps.email, status: 'skipped', message: 'Omitido por configuración' } } }));
-    }
-
-    // Summary
-    const allOk = result.steps.generate.success &&
-      (result.steps.drive.success || !settings.saveToDrive) &&
-      (result.steps.email.success || !settings.sendEmail);
-    const anyOk = result.steps.generate.success || result.steps.drive.success || result.steps.email.success;
-    result.success = allOk;
-    result.partialSuccess = !allOk && anyOk;
-    result.summary = allOk ? 'Proceso completado exitosamente' : result.partialSuccess ? 'Proceso parcialmente completado' : 'El proceso falló';
+    );
 
     setWorkflowResult(result);
-    setWorkflowState(prev => ({ ...prev, isRunning: false, currentStep: null }));
 
     // Refresh number for next budget
     if (result.steps.generate.success) refreshBudgetNumber();
   };
 
   const isRunning = workflowState.isRunning;
+
+  const handleSigFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setSigFile(file);
+    if (file) setSigFileName(file.name);
+  };
+
+  const handleSaveSig = async () => {
+    if (!budget.meta.sellerId) {
+      toast.error('Seleccioná un vendedor antes de guardar la firma');
+      return;
+    }
+    setSavingSig(true);
+    try {
+      let base64: string | undefined;
+      let fileName: string | undefined;
+      if (sigFile) {
+        const buf = await sigFile.arrayBuffer();
+        base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        fileName = sigFile.name;
+      }
+      const body: Record<string, unknown> = { signature: sigText };
+      if (base64 !== undefined) { body.signatureFileBase64 = base64; body.signatureFileName = fileName; }
+      const res = await fetch(`/api/sellers/${budget.meta.sellerId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error('Error al guardar');
+      setMeta({
+        sellerSignature: sigText,
+        ...(base64 !== undefined && { sellerSignatureFileBase64: base64, sellerSignatureFileName: fileName }),
+      });
+      if (sigFile) {
+        setSettings(prev => ({
+          ...prev,
+          emailSignatureAttachment: { fileName: sigFile.name, file: sigFile },
+        }));
+      }
+      toast.success('Firma guardada');
+    } catch {
+      toast.error('No se pudo guardar la firma');
+    } finally {
+      setSavingSig(false);
+    }
+  };
+
   const drivePath = [
     settings.driveDestination.rootFolderName || `Presupuestos ${company.name}`,
     ...(settings.driveDestination.yearSubfolder ? [new Date().getFullYear().toString()] : []),
@@ -346,6 +319,33 @@ export function NewEquipmentDeliveryPanel() {
                 </Button>
               </div>
               <Textarea value={settings.emailBody} onChange={(e) => setSettings(prev => ({ ...prev, emailBody: e.target.value }))} disabled={isRunning} rows={3} />
+            </div>
+
+            {/* Firma del vendedor */}
+            <div className="space-y-3 pt-2 border-t">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Firma del vendedor</div>
+              <Textarea
+                value={sigText}
+                onChange={(e) => setSigText(e.target.value)}
+                disabled={isRunning}
+                rows={4}
+                placeholder="Escribí la firma del correo aquí..."
+                className="text-sm font-mono"
+              />
+              <div className="flex items-center gap-2 flex-wrap">
+                <input ref={sigFileRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleSigFileChange} />
+                <Button variant="outline" size="sm" type="button" onClick={() => sigFileRef.current?.click()} disabled={isRunning}>
+                  <Paperclip className="w-3.5 h-3.5 mr-1.5" />
+                  {sigFileName ? sigFileName : 'Adjuntar archivo'}
+                </Button>
+                {sigFileName && (
+                  <span className="text-xs text-muted-foreground truncate max-w-[180px]">{sigFileName}</span>
+                )}
+                <Button variant="outline" size="sm" type="button" onClick={handleSaveSig} disabled={isRunning || savingSig || !budget.meta.sellerId}>
+                  {savingSig ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />}
+                  Guardar firma
+                </Button>
+              </div>
             </div>
           </div>
         )}

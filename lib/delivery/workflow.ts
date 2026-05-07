@@ -1,8 +1,17 @@
 // Budget delivery workflow orchestrator
 // Coordinates workflow: 1) File generation -> 2) Drive upload -> 3) Email send
 
-import type { Budget } from '@/types/budget';
+import type { Budget, CompanyId, BudgetMeta, Customer } from '@/types/budget';
 import { COMPANIES } from '@/types/budget';
+
+// Minimal budget fields used directly by the workflow orchestrator.
+// Both Budget and NewEquipmentBudget satisfy this shape.
+export interface WorkflowBudget {
+  id: string;
+  companyId: CompanyId;
+  meta: BudgetMeta;
+  customer: Partial<Customer>;
+}
 import type {
   DeliverySettings,
   DeliveryWorkflowState,
@@ -20,11 +29,17 @@ import { registerRepairBudgetInSheets } from './sheets-service';
 // Type for workflow progress callback
 export type WorkflowProgressCallback = (state: DeliveryWorkflowState) => void;
 
+// Optional adapters to override default file generation and sheets registration
+export interface WorkflowAdapters {
+  generateFile?: (format: 'pdf' | 'docx') => Promise<Blob>;
+  registerInSheets?: () => Promise<void>;
+}
+
 /**
  * Validate delivery settings before running workflow
  */
 export function validateDeliverySettings(
-  budget: Budget,
+  budget: WorkflowBudget,
   settings: DeliverySettings
 ): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
@@ -97,9 +112,10 @@ function updateStep(
  * Order: 1) Generate file -> 2) Save to Drive -> 3) Send email
  */
 export async function runDeliveryWorkflow(
-  budget: Budget,
+  budget: WorkflowBudget,
   settings: DeliverySettings,
-  onProgress?: WorkflowProgressCallback
+  onProgress?: WorkflowProgressCallback,
+  adapters?: WorkflowAdapters
 ): Promise<DeliveryWorkflowResult> {
   let state = createInitialWorkflowState();
   state.isRunning = true;
@@ -135,12 +151,14 @@ export async function runDeliveryWorkflow(
     
     let fileBlob: Blob;
     try {
-      if (settings.fileFormat === 'pdf') {
-        fileBlob = await exportToPDFBlob(budget);
+      if (adapters?.generateFile) {
+        fileBlob = await adapters.generateFile(settings.fileFormat);
+      } else if (settings.fileFormat === 'pdf') {
+        fileBlob = await exportToPDFBlob(budget as Budget);
       } else {
-        fileBlob = await exportToDocxBlob(budget);
+        fileBlob = await exportToDocxBlob(budget as Budget);
       }
-      
+
       const generatedFile: GeneratedBudgetFile = {
         id: `file_${Date.now()}`,
         name: settings.fileName,
@@ -151,7 +169,7 @@ export async function runDeliveryWorkflow(
         budgetId: budget.id,
         budgetNumber: budget.meta.number,
       };
-      
+
       state.generatedFile = generatedFile;
       result.generatedFile = generatedFile;
       result.steps.generate.success = true;
@@ -164,7 +182,11 @@ export async function runDeliveryWorkflow(
       notify(state);
 
       // Registrar en Google Sheets (no bloquea si falla)
-      await registerRepairBudgetInSheets(budget);
+      if (adapters?.registerInSheets) {
+        await adapters.registerInSheets();
+      } else {
+        await registerRepairBudgetInSheets(budget as Budget);
+      }
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Error al generar el archivo';
@@ -196,10 +218,10 @@ export async function runDeliveryWorkflow(
       notify(state);
       
       try {
-        // Get the company's root Drive folder ID
+        // Get the root Drive folder ID (from settings, falling back to company default)
         const company = COMPANIES[budget.companyId];
-        const rootFolderId = company.driveFolderId;
-        
+        const rootFolderId = settings.driveDestination.rootFolder || company.driveFolderId;
+
         // Build subfolder path
         const subfolders: string[] = [];
         if (settings.driveDestination.yearSubfolder) {
@@ -280,7 +302,23 @@ export async function runDeliveryWorkflow(
       
       try {
         const ccEmails = settings.emailCc ? parseEmailList(settings.emailCc) : undefined;
-        
+
+        // Resolve signature attachment: prefer explicit Blob in settings,
+        // fall back to base64 stored in budget meta.
+        let sigAttachment: { name: string; content: Blob } | undefined;
+        if (settings.emailSignatureAttachment) {
+          sigAttachment = {
+            name: settings.emailSignatureAttachment.fileName,
+            content: settings.emailSignatureAttachment.file,
+          };
+        } else if (budget.meta.sellerSignatureFileBase64 && budget.meta.sellerSignatureFileName) {
+          const bytes = Uint8Array.from(atob(budget.meta.sellerSignatureFileBase64), c => c.charCodeAt(0));
+          sigAttachment = {
+            name: budget.meta.sellerSignatureFileName,
+            content: new Blob([bytes]),
+          };
+        }
+
         const emailResult = await sendBudgetEmail(
           settings.emailTo,
           budget.customer.attention || budget.customer.name,
@@ -291,7 +329,8 @@ export async function runDeliveryWorkflow(
             content: state.generatedFile!.blob,
           },
           ccEmails,
-          budget.companyId   // ← empresa → elige la cuenta Gmail correcta
+          budget.companyId,  // ← empresa → elige la cuenta Gmail correcta
+          sigAttachment
         );
         
         state.emailResult = emailResult;
@@ -380,15 +419,15 @@ export async function runDeliveryWorkflow(
  */
 export async function retryWorkflowStep(
   stepId: 'drive' | 'email',
-  budget: Budget,
+  budget: WorkflowBudget,
   settings: DeliverySettings,
   generatedFile: GeneratedBudgetFile,
   onProgress?: WorkflowProgressCallback
 ): Promise<{ success: boolean; error?: string }> {
   if (stepId === 'drive') {
     const company = COMPANIES[budget.companyId];
-    const rootFolderId = company.driveFolderId;
-    
+    const rootFolderId = settings.driveDestination.rootFolder || company.driveFolderId;
+
     // Build subfolder path
     const subfolders: string[] = [];
     if (settings.driveDestination.yearSubfolder) {
@@ -398,7 +437,7 @@ export async function retryWorkflowStep(
       subfolders.push(budget.customer.name);
     }
     const folderPath = subfolders.join('/');
-    
+
     const result = await uploadFileToDrive(
       generatedFile.blob,
       settings.fileName,
@@ -410,6 +449,16 @@ export async function retryWorkflowStep(
   
   if (stepId === 'email') {
     const ccEmails = settings.emailCc ? parseEmailList(settings.emailCc) : undefined;
+    let sigAttachment: { name: string; content: Blob } | undefined;
+    if (settings.emailSignatureAttachment) {
+      sigAttachment = {
+        name: settings.emailSignatureAttachment.fileName,
+        content: settings.emailSignatureAttachment.file,
+      };
+    } else if (budget.meta.sellerSignatureFileBase64 && budget.meta.sellerSignatureFileName) {
+      const bytes = Uint8Array.from(atob(budget.meta.sellerSignatureFileBase64), c => c.charCodeAt(0));
+      sigAttachment = { name: budget.meta.sellerSignatureFileName, content: new Blob([bytes]) };
+    }
     const result = await sendBudgetEmail(
       settings.emailTo,
       budget.customer.attention || budget.customer.name,
@@ -417,7 +466,8 @@ export async function retryWorkflowStep(
       settings.emailBody,
       { name: settings.fileName, content: generatedFile.blob },
       ccEmails,
-      budget.companyId
+      budget.companyId,
+      sigAttachment
     );
     return { success: result.success, error: result.error };
   }

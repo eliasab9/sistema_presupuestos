@@ -62,12 +62,14 @@ export function buildEquipmentDescription(budget: Budget): string {
 }
 
 /**
- * Build the email body for a budget
- * Returns a professional, short message with equipment details
+ * Build the email body for a budget.
+ * Appends the seller's signature (from meta.sellerSignature) when present.
  */
 export function buildBudgetEmailBody(budget: Budget): string {
   const equipmentDesc = buildEquipmentDescription(budget);
-  return `Estimados, adjunto aquí el presupuesto por la reparación ${equipmentDesc}.`;
+  const body = `Estimados, adjunto aquí el presupuesto por la reparación ${equipmentDesc}.`;
+  const signature = budget.meta.sellerSignature?.trim();
+  return signature ? `${body}\n\n${signature}` : body;
 }
 
 /**

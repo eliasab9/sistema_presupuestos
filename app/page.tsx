@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { BudgetProvider, useBudget } from '@/lib/budget-context';
 import { NewEquipmentProvider, useNewEquipment } from '@/lib/new-equipment-context';
 import { BudgetForm } from '@/components/forms/budget-form';
@@ -10,7 +11,6 @@ import { NewEquipmentPreview } from '@/components/preview/new-equipment-preview'
 import { CustomerManager } from '@/components/customers/customer-manager';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   FilePlus,
   Copy,
@@ -22,8 +22,6 @@ import {
   ArrowLeft,
   Users,
   Building2,
-  Wrench,
-  Package,
   ClipboardList,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -32,7 +30,9 @@ import { registerNewEquipmentBudgetInSheets, registerRepairBudgetInSheets } from
 import { clearDraft } from '@/lib/storage/budgets';
 import { GoogleDriveUploadButton } from '@/components/ui/google-drive-upload-button';
 import { BudgetHistoryPage } from '@/components/budget-history/budget-history-page';
-import type { Customer, CompanyId, BudgetType } from '@/types/budget';
+import { CompanySelector } from '@/components/wizard/company-selector';
+import { BudgetTypeSelector } from '@/components/wizard/budget-type-selector';
+import { useAppNavigation } from '@/hooks/use-app-navigation';
 import { COMPANIES } from '@/types/budget';
 import {
   Sheet,
@@ -40,90 +40,32 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 
-type AppView = 'company' | 'budget-type' | 'customers' | 'budget' | 'new-equipment' | 'history';
-
 function BudgetApp() {
-  const { budget, resetBudget, refreshBudgetNumber, loadBudget, setCustomer, setCompany } = useBudget();
+  const { budget, resetBudget, refreshBudgetNumber, loadBudget, setCompany } = useBudget();
   const newEquipmentContext = useNewEquipment();
+  const {
+    currentView,
+    setCurrentView,
+    budgetType,
+    selectedCompanyId,
+    handleSelectCompany,
+    handleSelectBudgetType,
+    handleSelectCustomer,
+    handleNewBudgetWithoutCustomer,
+    handleBackToCustomers,
+    handleBackToBudgetType,
+    handleBackToCompany,
+  } = useAppNavigation();
+
   const [isExporting, setIsExporting] = useState(false);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const [mobileEqPreviewOpen, setMobileEqPreviewOpen] = useState(false);
-  const [currentView, setCurrentView] = useState<AppView>('company');
-  const [budgetType, setBudgetType] = useState<BudgetType>('reparacion');
-  const [selectedCompanyId, setSelectedCompanyId] = useState<CompanyId>('bemec');
+  const [pendingAction, setPendingAction] = useState<'new' | 'clear' | null>(null);
 
   const company = COMPANIES[currentView === 'new-equipment' ? newEquipmentContext.budget.companyId : budget.companyId];
 
-  const handleSelectCompany = (companyId: CompanyId) => {
-    setSelectedCompanyId(companyId);
-    setCompany(companyId);
-    newEquipmentContext.setCompany(companyId);
-    setCurrentView('budget-type');
-    toast.success(`Empresa "${COMPANIES[companyId].name}" seleccionada`);
-  };
-
-  const handleSelectBudgetType = (type: BudgetType) => {
-    setBudgetType(type);
-    if (type === 'reparacion') {
-      setCurrentView('customers');
-    } else {
-      setCurrentView('customers');
-    }
-  };
-
-  const handleSelectCustomer = (customer: Customer) => {
-    const customerData = {
-      name: customer.name,
-      attention: customer.attention || '',
-      email: customer.email || '',
-      phone: customer.phone || '',
-      cuit: customer.cuit || '',
-      address: customer.address || '',
-      locality: customer.locality || '',
-      province: customer.province || '',
-    };
-    
-    if (budgetType === 'reparacion') {
-      setCustomer(customerData);
-      setCurrentView('budget');
-    } else {
-      newEquipmentContext.setCustomer(customerData);
-      setCurrentView('new-equipment');
-    }
-    toast.success(`Cliente "${customer.name}" seleccionado`);
-  };
-
-  const handleNewBudgetWithoutCustomer = () => {
-    if (budgetType === 'reparacion') {
-      resetBudget();
-      setCompany(selectedCompanyId);
-      setCurrentView('budget');
-    } else {
-      newEquipmentContext.resetBudget();
-      newEquipmentContext.setCompany(selectedCompanyId);
-      setCurrentView('new-equipment');
-    }
-  };
-
-  const handleBackToCustomers = () => {
-    setCurrentView('customers');
-  };
-
-  const handleBackToBudgetType = () => {
-    setCurrentView('budget-type');
-  };
-
-  const handleBackToCompany = () => {
-    setCurrentView('company');
-  };
-
   const handleNewBudget = () => {
-    if (confirm('¿Crear un nuevo presupuesto? Se perderán los cambios no guardados.')) {
-      resetBudget();
-      clearDraft();
-      setCurrentView('company');
-      toast.success('Selecciona una empresa para el nuevo presupuesto');
-    }
+    setPendingAction('new');
   };
 
   const handleDuplicate = () => {
@@ -143,13 +85,23 @@ function BudgetApp() {
   };
 
   const handleClear = () => {
-    if (confirm('¿Limpiar el formulario? Se perderán todos los datos.')) {
+    setPendingAction('clear');
+  };
+
+  const handleConfirmPendingAction = () => {
+    if (pendingAction === 'new') {
+      resetBudget();
+      clearDraft();
+      setCurrentView('company');
+      toast.success('Selecciona una empresa para el nuevo presupuesto');
+    } else if (pendingAction === 'clear') {
       const currentCompanyId = budget.companyId;
       resetBudget();
       setCompany(currentCompanyId);
       clearDraft();
       toast.success('Formulario limpiado');
     }
+    setPendingAction(null);
   };
 
   const handleExportPDF = async () => {
@@ -205,160 +157,18 @@ function BudgetApp() {
 
   // Company selection view
   if (currentView === 'company') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
-        <div className="max-w-2xl w-full animate-fade-in">
-          <div className="text-center mb-10">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-white shadow-md mb-5">
-              <Building2 className="h-7 w-7 text-slate-500" />
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight mb-2 text-slate-800">Sistema de Presupuestos</h1>
-            <p className="text-slate-500">Seleccioná la empresa para generar el presupuesto</p>
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-5">
-            {Object.values(COMPANIES).map((comp) => (
-              <button
-                key={comp.id}
-                className="group relative overflow-hidden rounded-2xl border-2 border-transparent bg-white shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-offset-2 text-left"
-                style={{ ['--tw-ring-color' as string]: comp.primaryColor }}
-                onClick={() => handleSelectCompany(comp.id)}
-              >
-                {/* Color accent bar */}
-                <div
-                  className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl"
-                  style={{ background: `linear-gradient(90deg, ${comp.primaryColor}, ${comp.secondaryColor})` }}
-                />
-                <div className="p-8 flex flex-col items-center text-center">
-                  <div
-                    className="w-20 h-20 rounded-xl flex items-center justify-center mb-5 transition-transform duration-300 group-hover:scale-110"
-                    style={{ backgroundColor: `${comp.primaryColor}12` }}
-                  >
-                    <img
-                      src={comp.logo}
-                      alt={comp.name}
-                      className="w-14 h-14 object-contain"
-                    />
-                  </div>
-                  <h2
-                    className="text-xl font-bold mb-1"
-                    style={{ color: comp.primaryColor }}
-                  >
-                    {comp.name}
-                  </h2>
-                  <p className="text-sm text-slate-500">{comp.subtitle}</p>
-                  <div
-                    className="mt-5 px-4 py-1.5 rounded-full text-xs font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                    style={{ backgroundColor: comp.primaryColor }}
-                  >
-                    Seleccionar →
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
+    return <CompanySelector onSelect={handleSelectCompany} />;
   }
 
   // Budget type selection view
   if (currentView === 'budget-type') {
-    const selectedCompany = COMPANIES[selectedCompanyId];
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-        {/* Header with company accent */}
-        <header className="bg-white border-b shadow-sm">
-          <div
-            className="h-1"
-            style={{ background: `linear-gradient(90deg, ${selectedCompany.primaryColor}, ${selectedCompany.secondaryColor})` }}
-          />
-          <div className="px-4 py-3 flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={handleBackToCompany} className="rounded-xl">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <button
-              type="button"
-              onClick={handleBackToCompany}
-              className="flex items-center gap-3 rounded-xl px-1.5 py-1 -mx-1.5 -my-1 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1"
-              style={{ ['--tw-ring-color' as string]: selectedCompany.primaryColor }}
-              title="Volver al inicio"
-            >
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: `${selectedCompany.primaryColor}15` }}
-              >
-                <img src={selectedCompany.logo} alt={selectedCompany.name} className="w-7 h-7 object-contain" />
-              </div>
-              <div className="text-left">
-                <h1 className="text-base font-bold leading-tight" style={{ color: selectedCompany.primaryColor }}>
-                  {selectedCompany.name}
-                </h1>
-                <p className="text-xs text-muted-foreground">{selectedCompany.subtitle}</p>
-              </div>
-            </button>
-            <div className="ml-auto">
-              <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setCurrentView('history')}>
-                <ClipboardList className="h-4 w-4 mr-1.5" />
-                Estado
-              </Button>
-            </div>
-          </div>
-        </header>
-
-        <div className="flex items-center justify-center p-4 animate-fade-in" style={{ minHeight: 'calc(100vh - 74px)' }}>
-          <div className="max-w-2xl w-full">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl font-bold tracking-tight mb-2 text-slate-800">Tipo de Presupuesto</h2>
-              <p className="text-slate-500">¿Qué tipo de presupuesto querés crear?</p>
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-5">
-              {[
-                {
-                  type: 'reparacion' as const,
-                  icon: Wrench,
-                  title: 'Reparación',
-                  desc: 'Presupuestar reparación de motores, bombas, reductores y otros equipos',
-                },
-                {
-                  type: 'equipo_nuevo' as const,
-                  icon: Package,
-                  title: 'Equipo Nuevo',
-                  desc: 'Cotizar venta de equipos nuevos: motores, bombas, reductores, variadores',
-                },
-              ].map(({ type, icon: Icon, title, desc }) => (
-                <button
-                  key={type}
-                  onClick={() => handleSelectBudgetType(type)}
-                  className="group relative overflow-hidden rounded-2xl border-2 border-transparent bg-white shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 text-left focus:outline-none"
-                >
-                  <div
-                    className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl"
-                    style={{ background: `linear-gradient(90deg, ${selectedCompany.primaryColor}, ${selectedCompany.secondaryColor})` }}
-                  />
-                  <div className="p-8 flex flex-col items-center text-center">
-                    <div
-                      className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 transition-transform duration-300 group-hover:scale-110"
-                      style={{ backgroundColor: `${selectedCompany.primaryColor}15` }}
-                    >
-                      <Icon className="h-8 w-8" style={{ color: selectedCompany.primaryColor }} />
-                    </div>
-                    <h3 className="text-lg font-bold mb-2 text-slate-800">{title}</h3>
-                    <p className="text-sm text-slate-500 leading-relaxed">{desc}</p>
-                    <div
-                      className="mt-5 px-4 py-1.5 rounded-full text-xs font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                      style={{ backgroundColor: selectedCompany.primaryColor }}
-                    >
-                      Seleccionar →
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      <BudgetTypeSelector
+        company={COMPANIES[selectedCompanyId]}
+        onBack={handleBackToCompany}
+        onSelect={handleSelectBudgetType}
+        onHistory={() => setCurrentView('history')}
+      />
     );
   }
 
@@ -754,6 +564,20 @@ function BudgetApp() {
         <span>Presupuesto N° {budget.meta.number} {budget.customer.name && `· ${budget.customer.name}`}</span>
         <span>Guardado automático activo</span>
       </footer>
+
+      <ConfirmDialog
+        open={pendingAction !== null}
+        onOpenChange={(open) => { if (!open) setPendingAction(null); }}
+        title={pendingAction === 'new' ? '¿Crear nuevo presupuesto?' : '¿Limpiar el formulario?'}
+        description={
+          pendingAction === 'new'
+            ? 'Se perderán los cambios no guardados del presupuesto actual.'
+            : 'Se perderán todos los datos del formulario. Esta acción no se puede deshacer.'
+        }
+        confirmLabel={pendingAction === 'new' ? 'Crear nuevo' : 'Limpiar'}
+        destructive
+        onConfirm={handleConfirmPendingAction}
+      />
     </div>
   );
 }

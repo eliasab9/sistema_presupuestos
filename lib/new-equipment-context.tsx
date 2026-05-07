@@ -52,7 +52,7 @@ function createEmptyBudget(): NewEquipmentBudget {
       number: String(Math.floor(Math.random() * 9000) + 1000),
       date: today.toLocaleDateString('es-AR'),
       validUntil: validUntil.toLocaleDateString('es-AR'),
-      exchangeRate: 1200,
+      exchangeRate: 0,
       currency: 'ARS',
       paymentTerms: '',
       commercialValidity: '',

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Badge } from '@/components/ui/badge';
 import {
   ArrowLeft,
@@ -59,6 +60,7 @@ export function BudgetHistoryPage({ company, onBack }: BudgetHistoryPageProps) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [clientSearch, setClientSearch] = useState('');
+  const [budgetToDelete, setBudgetToDelete] = useState<Budget | null>(null);
 
   const refresh = useCallback(() => {
     const sent = getAllBudgets().filter((b) => !!b.status && b.companyId === company.id);
@@ -107,8 +109,13 @@ export function BudgetHistoryPage({ company, onBack }: BudgetHistoryPageProps) {
   };
 
   const handleDelete = (b: Budget) => {
-    if (!confirm(`¿Eliminar el presupuesto N° ${b.meta.number} del historial?`)) return;
-    deleteBudget(b.id);
+    setBudgetToDelete(b);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!budgetToDelete) return;
+    deleteBudget(budgetToDelete.id);
+    setBudgetToDelete(null);
     refresh();
     toast.success('Eliminado del historial');
   };
@@ -354,6 +361,16 @@ export function BudgetHistoryPage({ company, onBack }: BudgetHistoryPageProps) {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={budgetToDelete !== null}
+        onOpenChange={(open) => { if (!open) setBudgetToDelete(null); }}
+        title={`¿Eliminar presupuesto N° ${budgetToDelete?.meta.number}?`}
+        description="Esta acción no se puede deshacer. El presupuesto se eliminará del historial local."
+        confirmLabel="Eliminar"
+        destructive
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

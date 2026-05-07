@@ -49,7 +49,7 @@ function createInitialBudget(): Budget {
       number: generateBudgetNumber(lastNumber),
       date: formatDate(today),
       validUntil: formatDate(addDays(today, 7)),
-      exchangeRate: 1400,
+      exchangeRate: 0,
       currency: 'ARS',
       paymentTerms: '',
       commercialValidity: '',
@@ -122,12 +122,50 @@ function budgetReducer(state: Budget, action: BudgetAction): Budget {
         updatedAt: new Date().toISOString(),
       };
     
-    case 'SET_META':
+    case 'SET_META': {
+      const newMeta = { ...state.meta, ...action.payload };
+      const tcChanged =
+        action.payload.exchangeRate !== undefined &&
+        action.payload.exchangeRate !== state.meta.exchangeRate &&
+        action.payload.exchangeRate > 0;
+
+      if (!tcChanged) {
+        return { ...state, meta: newMeta, updatedAt: new Date().toISOString() };
+      }
+
+      // Recalculate USD-based items in flat arrays (active section)
+      const tc = action.payload.exchangeRate!;
+      const recalcBearings = (bs: typeof state.bearings) =>
+        bs.map(b => ({
+          ...b,
+          subtotalARS: Math.round((b.unitCostUSD / 0.65) * tc * b.quantity),
+          formula: `U$S ${b.unitCostUSD.toFixed(2)} / 0,65 × TC ${tc} × ${b.quantity}`,
+        }));
+      const recalcSpareParts = (sp: typeof state.spareParts) =>
+        sp.map(s => ({
+          ...s,
+          subtotalARS: Math.round((s.unitPriceUSD / 0.65) * tc * s.quantity),
+          formula: `U$S ${s.unitPriceUSD.toFixed(2)} / 0,65 × TC ${tc} × ${s.quantity}`,
+        }));
+
+      // Also recalculate all stored sections
+      const recalcedSections = state.allSections.map((section, i) => {
+        if (i === state.activeSectionIdx) {
+          // Active section: use the current flat arrays (will be synced below)
+          return { ...section, bearings: recalcBearings(state.bearings), spareParts: recalcSpareParts(state.spareParts) };
+        }
+        return { ...section, bearings: recalcBearings(section.bearings), spareParts: recalcSpareParts(section.spareParts) };
+      });
+
       return {
         ...state,
-        meta: { ...state.meta, ...action.payload },
+        meta: newMeta,
+        bearings: recalcBearings(state.bearings),
+        spareParts: recalcSpareParts(state.spareParts),
+        allSections: recalcedSections,
         updatedAt: new Date().toISOString(),
       };
+    }
     
     case 'SET_CUSTOMER':
       return {

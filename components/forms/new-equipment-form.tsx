@@ -17,6 +17,7 @@ import {
 import { Trash2, Zap, Droplets, Settings, Gauge, Package, ChevronsUpDown, Check } from 'lucide-react';
 import { NEW_EQUIPMENT_TYPE_LABELS, type NewEquipmentType, type NewEquipmentItem } from '@/types/budget';
 import { NewEquipmentDeliveryPanel } from '@/components/delivery/new-equipment-delivery-panel';
+import { SellerPicker, type SellerFromApi } from '@/components/forms/sections/seller-picker';
 import { cn } from '@/lib/utils';
 
 const EQUIPMENT_ICONS: Record<NewEquipmentType, React.ReactNode> = {
@@ -330,6 +331,16 @@ function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
 
 export function NewEquipmentForm() {
   const { budget, setMeta, setCustomer, addItem } = useNewEquipment();
+
+  const handleSelectSeller = (seller: SellerFromApi) => {
+    setMeta({
+      responsable: seller.name,
+      sellerId: seller.id,
+      sellerSignature: seller.signature ?? '',
+      sellerSignatureFileName: seller.signatureFileName ?? '',
+      sellerSignatureFileBase64: seller.signatureFileBase64 ?? '',
+    });
+  };
   const { meta, customer, items, subtotalItems } = budget;
 
   return (
@@ -370,6 +381,13 @@ export function NewEquipmentForm() {
                 onChange={(e) => setMeta({ validUntil: e.target.value })}
               />
             </div>
+          </div>
+          <div className="mt-4">
+            <SellerPicker
+              companyId={budget.companyId}
+              responsable={meta.responsable}
+              onSelect={handleSelectSeller}
+            />
           </div>
         </section>
 
@@ -468,10 +486,10 @@ export function NewEquipmentForm() {
                 <span className="text-sm text-muted-foreground">$</span>
                 <Input
                   type="number"
-                  value={meta.exchangeRate}
+                  value={meta.exchangeRate === 0 ? '' : meta.exchangeRate}
                   onChange={(e) => setMeta({ exchangeRate: parseFloat(e.target.value) || 0 })}
                   className="w-32 bg-white"
-                  placeholder="1200"
+                  placeholder="Ingresá el TC..."
                 />
                 <span className="text-sm text-muted-foreground">/ U$S</span>
               </div>

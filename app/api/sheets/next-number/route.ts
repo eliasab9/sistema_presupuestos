@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { refreshAccessToken } from '@/lib/google-drive';
+import { requireSheetsConfig } from '@/lib/config';
 
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID!;
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
-async function resolveSheetName(accessToken: string, gid: number): Promise<string> {
-  const res = await fetch(`${SHEETS_API}/${SPREADSHEET_ID}`, {
+const querySchema = z.object({
+  companyId: z.enum(['bemec', 'bamore']).default('bemec'),
+});
+
+async function resolveSheetName(accessToken: string, spreadsheetId: string, gid: number): Promise<string> {
+  const res = await fetch(`${SHEETS_API}/${spreadsheetId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) throw new Error(`No se pudo obtener metadata: ${await res.text()}`);
@@ -27,26 +32,32 @@ async function resolveSheetName(accessToken: string, gid: number): Promise<strin
  *   4. Si no hay valor pre-populado en A, incrementar el último número encontrado.
  */
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const companyId = searchParams.get('companyId') || 'bemec';
-  const gid = companyId === 'bamore'
-    ? Number(process.env.SHEET_GID_BAMORE)
-    : Number(process.env.SHEET_GID_BEMEC);
+  const parsed = querySchema.safeParse(
+    Object.fromEntries(new URL(request.url).searchParams)
+  );
+  if (!parsed.success) {
+    return NextResponse.json(
+      { success: false, error: parsed.error.errors[0].message },
+      { status: 400 }
+    );
+  }
+  const { companyId } = parsed.data;
 
-  if (!SPREADSHEET_ID) {
-    return NextResponse.json({ success: false, error: 'SPREADSHEET_ID no configurado' }, { status: 503 });
+  let sheetsConfig: ReturnType<typeof requireSheetsConfig>;
+  try {
+    sheetsConfig = requireSheetsConfig();
+  } catch (e) {
+    return NextResponse.json({ success: false, error: String(e) }, { status: 503 });
   }
-  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
-  if (!refreshToken) {
-    return NextResponse.json({ success: false, error: 'GOOGLE_OAUTH_REFRESH_TOKEN no configurado' }, { status: 503 });
-  }
+
+  const gid = companyId === 'bamore' ? sheetsConfig.SHEET_GID_BAMORE : sheetsConfig.SHEET_GID_BEMEC;
 
   try {
-    const { access_token } = await refreshAccessToken(refreshToken);
-    const sheetName = await resolveSheetName(access_token, gid);
+    const { access_token } = await refreshAccessToken(sheetsConfig.GOOGLE_OAUTH_REFRESH_TOKEN);
+    const sheetName = await resolveSheetName(access_token, sheetsConfig.SPREADSHEET_ID, gid);
 
     const range = encodeURIComponent(`'${sheetName}'!A:B`);
-    const res = await fetch(`${SHEETS_API}/${SPREADSHEET_ID}/values/${range}`, {
+    const res = await fetch(`${SHEETS_API}/${sheetsConfig.SPREADSHEET_ID}/values/${range}`, {
       headers: { Authorization: `Bearer ${access_token}` },
     });
     if (!res.ok) throw new Error(`Error leyendo hoja: ${await res.text()}`);

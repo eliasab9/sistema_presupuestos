@@ -69,6 +69,13 @@ export async function sendEmail(
       form.append('attachmentName', att.name);
     }
 
+    // Adjunto de firma (segundo archivo, opcional)
+    if (payload.attachments.length > 1) {
+      const sig = payload.attachments[1];
+      form.append('signatureAttachment', sig.content, sig.name);
+      form.append('signatureAttachmentName', sig.name);
+    }
+
     const res = await fetch('/api/email/send', { method: 'POST', body: form });
     const data = (await res.json()) as {
       success: boolean;
@@ -102,23 +109,34 @@ export async function sendBudgetEmail(
   body: string,
   attachment: { name: string; content: Blob },
   ccEmails?: string[],
-  companyId?: string
+  companyId?: string,
+  signatureAttachment?: { name: string; content: Blob }
 ): Promise<EmailSendResult> {
+  const attachments: EmailPayload['attachments'] = [
+    {
+      name: attachment.name,
+      content: attachment.content,
+      contentType: attachment.name.endsWith('.pdf')
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    },
+  ];
+
+  if (signatureAttachment) {
+    attachments.push({
+      name: signatureAttachment.name,
+      content: signatureAttachment.content,
+      contentType: 'application/octet-stream',
+    });
+  }
+
   return sendEmail(
     {
       to: [{ email: recipientEmail, name: recipientName }],
       cc: ccEmails?.map((email) => ({ email })),
       subject,
       body,
-      attachments: [
-        {
-          name: attachment.name,
-          content: attachment.content,
-          contentType: attachment.name.endsWith('.pdf')
-            ? 'application/pdf'
-            : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        },
-      ],
+      attachments,
     },
     companyId
   );

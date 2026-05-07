@@ -151,6 +151,10 @@ export interface BudgetMeta {
   ivaCondition?: string; // Condición de IVA seleccionada por chip
   pideNumber?: string; // Nº PIDE del equipo a presupuestar
   responsable?: string; // Quien realiza el presupuesto
+  sellerId?: string; // ID del vendedor en DB (para guardar cambios en la firma)
+  sellerSignature?: string; // Firma del vendedor, se agrega automáticamente al email
+  sellerSignatureFileName?: string; // Nombre del archivo adjunto a la firma
+  sellerSignatureFileBase64?: string; // Contenido base64 del archivo adjunto a la firma
 }
 
 // Repair section — one per equipment item in a multi-equipment budget

@@ -4,13 +4,22 @@ import { useBudget } from '@/lib/budget-context';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileText, User, Loader2 } from 'lucide-react';
-
-const RESPONSABLES = ['Elías', 'Pablo', 'Natalia'];
+import { FileText, Loader2 } from 'lucide-react';
+import { SellerPicker, type SellerFromApi } from './seller-picker';
 
 export function MetaSection() {
   const { budget, setMeta, isLoadingNumber } = useBudget();
-  const { meta } = budget;
+  const { meta, companyId } = budget;
+
+  const handleSelectSeller = (seller: SellerFromApi) => {
+    setMeta({
+      responsable: seller.name,
+      sellerId: seller.id,
+      sellerSignature: seller.signature ?? '',
+      sellerSignatureFileName: seller.signatureFileName ?? '',
+      sellerSignatureFileBase64: seller.signatureFileBase64 ?? '',
+    });
+  };
 
   return (
     <Card>
@@ -69,28 +78,39 @@ export function MetaSection() {
             />
           </div>
 
-          {/* Responsable */}
-          <div className="col-span-2">
-            <Label className="flex items-center gap-1 mb-2">
-              <User className="h-4 w-4" />
-              Responsable
+          {/* Tipo de cambio */}
+          <div className="sm:col-span-2">
+            <Label htmlFor="exchange-rate">
+              Tipo de Cambio (TC)
+              <span className="text-muted-foreground font-normal ml-1">
+                — actualiza los precios de rodamientos, repuestos y mecanizados
+              </span>
             </Label>
-            <div className="flex gap-2">
-              {RESPONSABLES.map((nombre) => (
-                <button
-                  key={nombre}
-                  type="button"
-                  onClick={() => setMeta({ responsable: nombre })}
-                  className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-all ${
-                    (meta.responsable ?? 'Elías') === nombre
-                      ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                      : 'bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground'
-                  }`}
-                >
-                  {nombre}
-                </button>
-              ))}
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-sm text-muted-foreground">$</span>
+              <Input
+                id="exchange-rate"
+                type="number"
+                min="0"
+                step="1"
+                value={meta.exchangeRate === 0 ? '' : meta.exchangeRate}
+                onChange={(e) => {
+                  const val = e.target.value === '' ? 0 : Number(e.target.value);
+                  setMeta({ exchangeRate: val });
+                }}
+                placeholder="Ingresá el tipo de cambio..."
+                className="max-w-[220px]"
+              />
             </div>
+          </div>
+
+          {/* Responsable + firma */}
+          <div className="sm:col-span-2">
+            <SellerPicker
+              companyId={companyId}
+              responsable={meta.responsable}
+              onSelect={handleSelectSeller}
+            />
           </div>
         </div>
       </CardContent>

@@ -1,21 +1,19 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { 
-  Send, 
-  HardDrive, 
-  Mail, 
-  FileText, 
-  Settings, 
-  ChevronDown, 
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  Send,
+  HardDrive,
+  Mail,
+  ChevronDown,
   ChevronUp,
   AlertCircle,
-  CheckCircle2,
   Loader2,
   RefreshCw,
   ExternalLink,
-  Edit3,
   FolderOpen,
+  Paperclip,
+  Save,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,11 +21,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Select,
@@ -38,9 +31,10 @@ import {
 } from '@/components/ui/select';
 import { useBudget } from '@/lib/budget-context';
 import { COMPANIES } from '@/types/budget';
-import { BudgetPreview } from '@/components/preview/budget-preview';
 import { saveBudget } from '@/lib/storage/budgets';
-import { toast } from 'sonner';
+import { WorkflowProgress } from './workflow-progress';
+import { ConfirmSendModal } from './confirm-send-modal';
+import { toast as showToast } from 'sonner';
 import type { 
   DeliverySettings, 
   DeliveryWorkflowState, 
@@ -57,13 +51,13 @@ import { buildBudgetEmailSubject, buildBudgetEmailBody } from '@/lib/delivery/em
 import { runDeliveryWorkflow, validateDeliverySettings, retryWorkflowStep } from '@/lib/delivery/workflow';
 
 export function DeliveryPanel() {
-  const { budget, refreshBudgetNumber, resetBudget } = useBudget();
+  const { budget, setMeta, refreshBudgetNumber, resetBudget } = useBudget();
   const company = COMPANIES[budget.companyId];
-  
+
   // Settings state
   const [settings, setSettings] = useState<DeliverySettings>(() => getDefaultDeliverySettings());
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
-  
+
   // Workflow state
   const [workflowState, setWorkflowState] = useState<DeliveryWorkflowState>(() => createInitialWorkflowState());
   const [workflowResult, setWorkflowResult] = useState<DeliveryWorkflowResult | null>(null);
@@ -71,6 +65,20 @@ export function DeliveryPanel() {
 
   // Preview/confirmation modal state
   const [pendingAction, setPendingAction] = useState<null | 'full' | 'drive' | 'email'>(null);
+
+  // Signature editor state (mirrors budget.meta but editable independently)
+  const [sigText, setSigText] = useState(budget.meta.sellerSignature ?? '');
+  const [sigFileName, setSigFileName] = useState(budget.meta.sellerSignatureFileName ?? '');
+  const [sigFile, setSigFile] = useState<File | null>(null);
+  const [savingSig, setSavingSig] = useState(false);
+  const sigFileRef = useRef<HTMLInputElement>(null);
+
+  // Sync signature text when seller changes
+  useEffect(() => {
+    setSigText(budget.meta.sellerSignature ?? '');
+    setSigFileName(budget.meta.sellerSignatureFileName ?? '');
+    setSigFile(null);
+  }, [budget.meta.sellerId]);
   
   // Auto-fill settings based on budget data
   useEffect(() => {
@@ -96,7 +104,7 @@ export function DeliveryPanel() {
       },
     }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [budget.id, budget.customer.email, budget.companyId, settings.fileFormat]);
+  }, [budget.id, budget.customer.email, budget.companyId, settings.fileFormat, budget.meta.responsable, budget.meta.sellerSignature]);
   
   // Update file name when format changes
   const handleFormatChange = (format: FileFormat) => {
@@ -178,7 +186,7 @@ export function DeliveryPanel() {
       } catch (e) {
         console.error('Failed to archive sent budget:', e);
       }
-      toast.success('Presupuesto enviado y archivado como pendiente');
+      showToast.success('Presupuesto enviado y archivado como pendiente');
       // Slight delay so the user sees the success state before the form clears
       setTimeout(() => {
         resetBudget();
@@ -218,26 +226,58 @@ export function DeliveryPanel() {
     }
   };
   
-  // Get step icon and color
-  const getStepDisplay = (step: DeliveryWorkflowState['steps']['generate']) => {
-    switch (step.status) {
-      case 'pending':
-        return { icon: <div className="w-4 h-4 rounded-full border-2 border-muted-foreground" />, color: 'text-muted-foreground' };
-      case 'running':
-        return { icon: <Loader2 className="w-4 h-4 animate-spin" />, color: 'text-primary' };
-      case 'success':
-        return { icon: <CheckCircle2 className="w-4 h-4" />, color: 'text-green-600' };
-      case 'error':
-        return { icon: <AlertCircle className="w-4 h-4" />, color: 'text-red-600' };
-      case 'skipped':
-        return { icon: <div className="w-4 h-4 rounded-full bg-muted" />, color: 'text-muted-foreground' };
-      default:
-        return { icon: null, color: '' };
+  const isRunning = workflowState.isRunning;
+
+  // Handle signature file upload
+  const handleSigFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setSigFile(file);
+    if (file) setSigFileName(file.name);
+  };
+
+  // Save signature to DB and update budget meta
+  const handleSaveSig = async () => {
+    if (!budget.meta.sellerId) {
+      showToast.error('Seleccioná un vendedor antes de guardar la firma');
+      return;
+    }
+    setSavingSig(true);
+    try {
+      let base64: string | undefined;
+      let fileName: string | undefined;
+      if (sigFile) {
+        const buf = await sigFile.arrayBuffer();
+        base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        fileName = sigFile.name;
+      }
+      const body: Record<string, unknown> = { signature: sigText };
+      if (base64 !== undefined) { body.signatureFileBase64 = base64; body.signatureFileName = fileName; }
+      const res = await fetch(`/api/sellers/${budget.meta.sellerId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error('Error al guardar');
+      // Update budget meta so email body regenerates
+      setMeta({
+        sellerSignature: sigText,
+        ...(base64 !== undefined && { sellerSignatureFileBase64: base64, sellerSignatureFileName: fileName }),
+      });
+      // Sync signature attachment into settings for the next send
+      if (sigFile) {
+        setSettings(prev => ({
+          ...prev,
+          emailSignatureAttachment: { fileName: sigFile.name, file: sigFile },
+        }));
+      }
+      showToast.success('Firma guardada');
+    } catch {
+      showToast.error('No se pudo guardar la firma');
+    } finally {
+      setSavingSig(false);
     }
   };
-  
-  const isRunning = workflowState.isRunning;
-  
+
   // Build display path for Drive
   const buildDisplayPath = () => {
     const parts = [settings.driveDestination.rootFolderName || `Presupuestos ${company.name}`];
@@ -447,6 +487,51 @@ export function DeliveryPanel() {
                 rows={3}
               />
             </div>
+
+            {/* Firma del vendedor */}
+            <div className="space-y-3 pt-2 border-t">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Firma del vendedor</div>
+              <Textarea
+                value={sigText}
+                onChange={(e) => setSigText(e.target.value)}
+                disabled={isRunning}
+                rows={4}
+                placeholder="Escribí la firma del correo aquí..."
+                className="text-sm font-mono"
+              />
+              <div className="flex items-center gap-2 flex-wrap">
+                <input
+                  ref={sigFileRef}
+                  type="file"
+                  accept="image/*,.pdf"
+                  className="hidden"
+                  onChange={handleSigFileChange}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => sigFileRef.current?.click()}
+                  disabled={isRunning}
+                >
+                  <Paperclip className="w-3.5 h-3.5 mr-1.5" />
+                  {sigFileName ? sigFileName : 'Adjuntar archivo'}
+                </Button>
+                {sigFileName && (
+                  <span className="text-xs text-muted-foreground truncate max-w-[180px]">{sigFileName}</span>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={handleSaveSig}
+                  disabled={isRunning || savingSig || !budget.meta.sellerId}
+                >
+                  {savingSig ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />}
+                  Guardar firma
+                </Button>
+              </div>
+            </div>
           </div>
         )}
         
@@ -467,78 +552,11 @@ export function DeliveryPanel() {
         
         {/* Workflow Progress */}
         {(workflowState.isRunning || workflowResult) && (
-          <div className="space-y-3 p-4 bg-muted/30 rounded-lg">
-            <div className="text-sm font-medium">Estado del proceso</div>
-            <div className="space-y-2">
-              {/* Generate step */}
-              <div className="flex items-center gap-3">
-                <span className={getStepDisplay(workflowState.steps.generate).color}>
-                  {getStepDisplay(workflowState.steps.generate).icon}
-                </span>
-                <span className="text-sm flex-1">{workflowState.steps.generate.name}</span>
-                {workflowState.steps.generate.message && (
-                  <span className="text-xs text-muted-foreground">{workflowState.steps.generate.message}</span>
-                )}
-              </div>
-              
-              {/* Drive step */}
-              <div className="flex items-center gap-3">
-                <span className={getStepDisplay(workflowState.steps.drive).color}>
-                  {getStepDisplay(workflowState.steps.drive).icon}
-                </span>
-                <span className="text-sm flex-1">{workflowState.steps.drive.name}</span>
-                {workflowState.steps.drive.status === 'error' && workflowResult?.generatedFile && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRetry('drive')}
-                    className="text-xs"
-                  >
-                    <RefreshCw className="w-3 h-3 mr-1" />
-                    Reintentar
-                  </Button>
-                )}
-                {workflowState.steps.drive.message && (
-                  <span className="text-xs text-muted-foreground">{workflowState.steps.drive.message}</span>
-                )}
-              </div>
-              
-              {/* Email step */}
-              <div className="flex items-center gap-3">
-                <span className={getStepDisplay(workflowState.steps.email).color}>
-                  {getStepDisplay(workflowState.steps.email).icon}
-                </span>
-                <span className="text-sm flex-1">{workflowState.steps.email.name}</span>
-                {workflowState.steps.email.status === 'error' && workflowResult?.generatedFile && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleRetry('email')}
-                    className="text-xs"
-                  >
-                    <RefreshCw className="w-3 h-3 mr-1" />
-                    Reintentar
-                  </Button>
-                )}
-                {workflowState.steps.email.message && (
-                  <span className="text-xs text-muted-foreground">{workflowState.steps.email.message}</span>
-                )}
-              </div>
-            </div>
-            
-            {/* Result summary */}
-            {workflowResult && (
-              <div className={`mt-3 p-2 rounded text-sm ${
-                workflowResult.success 
-                  ? 'bg-green-100 text-green-800' 
-                  : workflowResult.partialSuccess 
-                    ? 'bg-yellow-100 text-yellow-800'
-                    : 'bg-red-100 text-red-800'
-              }`}>
-                {workflowResult.summary}
-              </div>
-            )}
-          </div>
+          <WorkflowProgress
+            workflowState={workflowState}
+            workflowResult={workflowResult}
+            onRetry={handleRetry}
+          />
         )}
         
         {/* Action Buttons */}
@@ -600,143 +618,19 @@ export function DeliveryPanel() {
         </Collapsible>
       </CardContent>
 
-      {/* Preview / confirmation modal — wide two-column layout */}
-      <Dialog open={pendingAction !== null} onOpenChange={(open) => { if (!open) setPendingAction(null); }}>
-        <DialogContent
-          showCloseButton={true}
-          className="max-w-[96vw] w-full sm:max-w-[92vw] lg:max-w-6xl h-[92vh] p-0 gap-0 overflow-hidden flex flex-col"
-        >
-          {/* Hidden title for screen readers */}
-          <DialogTitle className="sr-only">Confirmar envío del presupuesto</DialogTitle>
-
-          {/* ── Header strip ── */}
-          <div
-            className="flex items-center justify-between px-5 py-3 border-b shrink-0"
-            style={{ borderTopLeftRadius: 'inherit', borderTopRightRadius: 'inherit' }}
-          >
-            <div className="flex items-center gap-2">
-              <Send className="w-4 h-4" style={{ color: company.primaryColor }} />
-              <span className="font-semibold text-sm">Confirmar envío</span>
-              <span className="text-xs text-muted-foreground hidden sm:inline">
-                — Revisá el documento y los datos antes de confirmar
-              </span>
-            </div>
-          </div>
-
-          {/* ── Body: two columns ── */}
-          <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
-
-            {/* LEFT — live document preview */}
-            <div className="flex-1 min-h-0 border-b lg:border-b-0 lg:border-r overflow-hidden bg-slate-100">
-              <div className="h-full overflow-y-auto">
-                <div className="py-4 px-2 sm:px-4 flex justify-center">
-                  {/* Scale-down wrapper so the A4 preview fits neatly */}
-                  <div className="w-full max-w-[640px] origin-top">
-                    <BudgetPreview />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* RIGHT — delivery details + actions */}
-            {pendingAction && (() => {
-              const eff = settingsForAction(pendingAction);
-              const willDrive = eff.saveToDrive;
-              const willEmail = eff.sendEmail;
-              return (
-                <div className="w-full lg:w-80 xl:w-96 shrink-0 flex flex-col">
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3 text-sm">
-
-                    {/* File */}
-                    <div className="rounded-xl border bg-muted/30 p-3 space-y-1">
-                      <div className="font-medium flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground mb-2">
-                        <FileText className="w-3.5 h-3.5" />
-                        Archivo a generar
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Formato</span>
-                        <span className="font-mono font-medium">{eff.fileFormat.toUpperCase()}</span>
-                      </div>
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-muted-foreground shrink-0">Nombre</span>
-                        <span className="font-mono text-xs text-right break-all">{eff.fileName}</span>
-                      </div>
-                    </div>
-
-                    {/* Drive */}
-                    {willDrive && (
-                      <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 space-y-1">
-                        <div className="font-medium flex items-center gap-2 text-xs uppercase tracking-wide text-blue-600 mb-2">
-                          <HardDrive className="w-3.5 h-3.5" />
-                          Google Drive
-                        </div>
-                        <div className="text-xs text-muted-foreground break-all">
-                          <code className="bg-white/80 px-1.5 py-0.5 rounded border border-blue-100">
-                            {drivePath}/{eff.fileName}
-                          </code>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Email */}
-                    {willEmail && (
-                      <div className="rounded-xl border border-green-100 bg-green-50/60 p-3 space-y-2">
-                        <div className="font-medium flex items-center gap-2 text-xs uppercase tracking-wide text-green-700 mb-2">
-                          <Mail className="w-3.5 h-3.5" />
-                          Email
-                        </div>
-                        <div className="space-y-1 text-xs">
-                          <div className="flex gap-2">
-                            <span className="text-muted-foreground w-10 shrink-0">Para</span>
-                            <span className="font-mono break-all">{eff.emailTo}</span>
-                          </div>
-                          {eff.emailCc && (
-                            <div className="flex gap-2">
-                              <span className="text-muted-foreground w-10 shrink-0">CC</span>
-                              <span className="font-mono break-all">{eff.emailCc}</span>
-                            </div>
-                          )}
-                          <div className="flex gap-2">
-                            <span className="text-muted-foreground w-10 shrink-0">Asunto</span>
-                            <span className="break-words">{eff.emailSubject}</span>
-                          </div>
-                        </div>
-                        <div className="pt-1">
-                          <div className="text-xs text-muted-foreground mb-1">Mensaje</div>
-                          <pre className="text-xs whitespace-pre-wrap bg-white/80 border border-green-100 rounded-lg p-2 max-h-32 overflow-y-auto font-sans leading-relaxed">
-{eff.emailBody}
-                          </pre>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Sticky action buttons */}
-                  <div className="border-t p-4 space-y-2 shrink-0 bg-background">
-                    <Button
-                      onClick={handleConfirmSend}
-                      disabled={isRunning}
-                      className="w-full text-white shadow-sm"
-                      style={{ backgroundColor: company.primaryColor }}
-                    >
-                      <Send className="w-4 h-4 mr-2" />
-                      Confirmar y enviar
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => setPendingAction(null)}
-                      disabled={isRunning}
-                    >
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Preview / confirmation modal */}
+      {pendingAction && (
+        <ConfirmSendModal
+          open={pendingAction !== null}
+          onOpenChange={(open) => { if (!open) setPendingAction(null); }}
+          pendingAction={pendingAction}
+          effectiveSettings={settingsForAction(pendingAction)}
+          drivePath={drivePath}
+          company={company}
+          isRunning={isRunning}
+          onConfirm={handleConfirmSend}
+        />
+      )}
     </Card>
   );
 }

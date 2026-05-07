@@ -6,6 +6,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "CRUMA Demo",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd /Users/eliasagustin/Desktop/CRUMA-Demo && PORT=4000 node server.js"],
+      "port": 4000
+    },
+    {
+      "name": "ARES Clothing",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd /Users/eliasagustin/Desktop/ares-clothing && npm run dev"],
+      "port": 3001
     }
   ]
 }

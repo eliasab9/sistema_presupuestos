@@ -82,6 +82,9 @@ export interface DeliverySettings {
   emailCc?: string;
   emailSubject: string;
   emailBody: string;
+  // Optional file attached alongside the email signature (e.g. logo/banner).
+  // Blob used at send time; fileName for display.
+  emailSignatureAttachment?: { fileName: string; file: Blob };
 }
 
 export interface DeliveryWorkflowState {

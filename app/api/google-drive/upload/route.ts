@@ -1,18 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { refreshAccessToken, findOrCreateFolder, uploadFileToDrive } from '@/lib/google-drive';
+import { requireDriveConfig, requireGoogleOAuth } from '@/lib/config';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('drive/upload');
 
 export const maxDuration = 60;
+
+const uploadFieldsSchema = z.object({
+  fileName:     z.string().min(1, 'fileName es requerido'),
+  rootFolderId: z.string().min(1, 'rootFolderId es requerido'),
+  folderPath:   z.string().default(''),
+  mimeType:     z.string().optional(),
+});
 
 /**
  * POST /api/google-drive/upload
  *
  * Sube un archivo a Google Drive usando OAuth2 con refresh token guardado.
  * El token se renueva automáticamente — sin interacción del usuario.
- *
- * Env vars requeridas:
- *   GOOGLE_CLIENT_ID
- *   GOOGLE_CLIENT_SECRET
- *   GOOGLE_OAUTH_REFRESH_TOKEN   ← obtenido una vez desde /setup-drive
  *
  * Body (multipart/form-data):
  *   file          : Blob   — archivo a subir
@@ -22,50 +29,48 @@ export const maxDuration = 60;
  *   mimeType      : string — tipo MIME (opcional)
  */
 export async function POST(request: NextRequest) {
-  // Verificar credenciales
-  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
-  if (!refreshToken) {
-    return NextResponse.json(
-      {
-        success: false,
-        error:
-          'Google Drive no configurado. Visitá /setup-drive para autorizar el acceso.',
-      },
-      { status: 503 }
-    );
-  }
-
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Faltan GOOGLE_CLIENT_ID o GOOGLE_CLIENT_SECRET en .env.local',
-      },
-      { status: 503 }
-    );
+  try {
+    requireGoogleOAuth();
+    requireDriveConfig();
+  } catch (e) {
+    return NextResponse.json({ success: false, error: String(e) }, { status: 503 });
   }
 
   try {
-    // Obtener access token fresco
-    const tokens = await refreshAccessToken(refreshToken);
-    const accessToken = tokens.access_token;
+    const formData = await request.formData();
 
-    // Parsear form data
-    const formData    = await request.formData();
-    const file        = formData.get('file') as Blob | null;
-    const fileName    = formData.get('fileName') as string | null;
-    const rootFolderId = formData.get('rootFolderId') as string | null;
-    const folderPath  = (formData.get('folderPath') as string | null) || '';
-    const mimeType    = (formData.get('mimeType') as string | null) ||
-      (fileName?.endsWith('.pdf') ? 'application/pdf'
-        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-
-    if (!file || !fileName || !rootFolderId) {
+    const file = formData.get('file') as Blob | null;
+    if (!file) {
       return NextResponse.json(
-        { success: false, error: 'Faltan campos: file, fileName, rootFolderId' },
+        { success: false, error: 'Falta el campo "file"' },
         { status: 400 }
       );
     }
+
+    const rawFields = {
+      fileName:     formData.get('fileName'),
+      rootFolderId: formData.get('rootFolderId'),
+      folderPath:   formData.get('folderPath') ?? '',
+      mimeType:     formData.get('mimeType') ?? undefined,
+    };
+
+    const parsed = uploadFieldsSchema.safeParse(rawFields);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: parsed.error.errors.map((e) => e.message).join(', ') },
+        { status: 400 }
+      );
+    }
+    const { fileName, rootFolderId, folderPath } = parsed.data;
+    const mimeType = parsed.data.mimeType ??
+      (fileName.endsWith('.pdf')
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+
+    // Obtener access token fresco
+    const { GOOGLE_OAUTH_REFRESH_TOKEN } = requireDriveConfig();
+    const tokens = await refreshAccessToken(GOOGLE_OAUTH_REFRESH_TOKEN);
+    const accessToken = tokens.access_token;
 
     // Construir ruta de carpetas
     let targetFolderId = rootFolderId;
@@ -91,6 +96,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: result.error }, { status: 500 });
     }
 
+    log.info('File uploaded to Drive', { fileName, fileId: result.fileId, folderPath });
     return NextResponse.json({
       success: true,
       fileId: result.fileId,
@@ -98,7 +104,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('[Drive Upload] Error:', error);
+    log.error('Failed to upload file to Drive', { error: String(error) });
     const message = error instanceof Error ? error.message : 'Error desconocido';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
