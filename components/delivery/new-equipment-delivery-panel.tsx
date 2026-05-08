@@ -98,12 +98,15 @@ export function NewEquipmentDeliveryPanel() {
   const [sigFileName, setSigFileName] = useState(budget.meta.sellerSignatureFileName ?? '');
   const [sigFile, setSigFile] = useState<File | null>(null);
   const [savingSig, setSavingSig] = useState(false);
+  const [sigExpanded, setSigExpanded] = useState(!budget.meta.sellerSignature);
   const sigFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setSigText(budget.meta.sellerSignature ?? '');
+    const sig = budget.meta.sellerSignature ?? '';
+    setSigText(sig);
     setSigFileName(budget.meta.sellerSignatureFileName ?? '');
     setSigFile(null);
+    setSigExpanded(!sig);
   }, [budget.meta.sellerId]);
 
   // Auto-fill settings from budget data
@@ -322,30 +325,48 @@ export function NewEquipmentDeliveryPanel() {
             </div>
 
             {/* Firma del vendedor */}
-            <div className="space-y-3 pt-2 border-t">
-              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Firma del vendedor</div>
-              <Textarea
-                value={sigText}
-                onChange={(e) => setSigText(e.target.value)}
-                disabled={isRunning}
-                rows={4}
-                placeholder="Escribí la firma del correo aquí..."
-                className="text-sm font-mono"
-              />
-              <div className="flex items-center gap-2 flex-wrap">
-                <input ref={sigFileRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleSigFileChange} />
-                <Button variant="outline" size="sm" type="button" onClick={() => sigFileRef.current?.click()} disabled={isRunning}>
-                  <Paperclip className="w-3.5 h-3.5 mr-1.5" />
-                  {sigFileName ? sigFileName : 'Adjuntar archivo'}
-                </Button>
-                {sigFileName && (
-                  <span className="text-xs text-muted-foreground truncate max-w-[180px]">{sigFileName}</span>
-                )}
-                <Button variant="outline" size="sm" type="button" onClick={handleSaveSig} disabled={isRunning || savingSig || !budget.meta.sellerId}>
-                  {savingSig ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />}
-                  Guardar firma
+            <div className="pt-2 border-t">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Firma del vendedor</div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs text-muted-foreground"
+                  onClick={() => setSigExpanded(v => !v)}
+                >
+                  {sigExpanded ? (
+                    <><ChevronUp className="w-3 h-3 mr-1" />Ocultar</>
+                  ) : (
+                    <><ChevronDown className="w-3 h-3 mr-1" />{budget.meta.sellerSignature ? 'Modificar firma' : 'Agregar firma'}</>
+                  )}
                 </Button>
               </div>
+              {sigExpanded && (
+                <div className="space-y-3 mt-3">
+                  <Textarea
+                    value={sigText}
+                    onChange={(e) => setSigText(e.target.value)}
+                    disabled={isRunning}
+                    rows={4}
+                    placeholder="Escribí la firma del correo aquí..."
+                    className="text-sm font-mono"
+                  />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input ref={sigFileRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleSigFileChange} />
+                    <Button variant="outline" size="sm" type="button" onClick={() => sigFileRef.current?.click()} disabled={isRunning}>
+                      <Paperclip className="w-3.5 h-3.5 mr-1.5" />
+                      {sigFileName ? sigFileName : 'Adjuntar archivo'}
+                    </Button>
+                    {sigFileName && (
+                      <span className="text-xs text-muted-foreground truncate max-w-[180px]">{sigFileName}</span>
+                    )}
+                    <Button variant="outline" size="sm" type="button" onClick={handleSaveSig} disabled={isRunning || savingSig || !budget.meta.sellerId}>
+                      {savingSig ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />}
+                      Guardar firma
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

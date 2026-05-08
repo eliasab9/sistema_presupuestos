@@ -1,39 +1,54 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useBudget } from '@/lib/budget-context';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ClipboardList, Plus, Trash2, GripVertical } from 'lucide-react';
+import { ClipboardList, Plus, Trash2, GripVertical, X } from 'lucide-react';
 import { COMMON_WORK_ITEMS, type WorkItem } from '@/types/budget';
+import { getCustomWorkItems, saveCustomWorkItem, deleteCustomWorkItem } from '@/lib/storage/work-items';
 
 export function WorkItemsSection() {
   const { budget, addWorkItem, updateWorkItem, removeWorkItem, reorderWorkItems } = useBudget();
   const { workItems } = budget;
   const [newItemText, setNewItemText] = useState('');
+  const [customItems, setCustomItems] = useState<string[]>([]);
 
-  const handleAddItem = (description: string) => {
+  useEffect(() => {
+    setCustomItems(getCustomWorkItems());
+  }, []);
+
+  const allFrequentItems = [...COMMON_WORK_ITEMS, ...customItems];
+
+  const handleAddItem = (description: string, saveAsCustom = false) => {
     if (!description.trim()) return;
-    
     const newItem: WorkItem = {
       id: crypto.randomUUID(),
       description: description.trim(),
       affectsCalculation: true,
       order: workItems.length,
     };
-    
     addWorkItem(newItem);
     setNewItemText('');
+
+    // If it's a manual entry not already in the combined list, save it
+    if (saveAsCustom && !allFrequentItems.includes(description.trim())) {
+      saveCustomWorkItem(description.trim());
+      setCustomItems(getCustomWorkItems());
+    }
   };
 
   const handleAddCommonItem = (description: string) => {
-    // Check if already added
     const exists = workItems.some(item => item.description === description);
     if (exists) return;
-    
     handleAddItem(description);
+  };
+
+  const handleDeleteCustomItem = (description: string) => {
+    deleteCustomWorkItem(description);
+    setCustomItems(getCustomWorkItems());
   };
 
   const handleMoveItem = (index: number, direction: 'up' | 'down') => {
@@ -57,25 +72,36 @@ export function WorkItemsSection() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Common items checklist */}
+        {/* Frequent items checklist */}
         <div className="space-y-2">
           <p className="text-sm font-medium text-muted-foreground">Trabajos frecuentes:</p>
           <div className="grid grid-cols-1 gap-1 max-h-48 overflow-y-auto border rounded-md p-2">
-            {COMMON_WORK_ITEMS.map((item) => {
+            {allFrequentItems.map((item) => {
               const isAdded = workItems.some(w => w.description === item);
+              const isCustom = customItems.includes(item);
               return (
-                <button
-                  key={item}
-                  onClick={() => handleAddCommonItem(item)}
-                  className={`text-left text-sm px-2 py-1 rounded transition-colors ${
-                    isAdded 
-                      ? 'bg-primary/10 text-primary cursor-default' 
-                      : 'hover:bg-muted cursor-pointer'
-                  }`}
-                  disabled={isAdded}
-                >
-                  {isAdded ? '✓ ' : '+ '}{item}
-                </button>
+                <div key={item} className="flex items-center group">
+                  <button
+                    onClick={() => handleAddCommonItem(item)}
+                    className={`flex-1 text-left text-sm px-2 py-1 rounded transition-colors ${
+                      isAdded
+                        ? 'bg-primary/10 text-primary cursor-default'
+                        : 'hover:bg-muted cursor-pointer'
+                    }`}
+                    disabled={isAdded}
+                  >
+                    {isAdded ? '✓ ' : '+ '}{item}
+                  </button>
+                  {isCustom && (
+                    <button
+                      onClick={() => handleDeleteCustomItem(item)}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition-opacity"
+                      title="Eliminar de la lista"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -140,14 +166,14 @@ export function WorkItemsSection() {
             className="flex-1"
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                handleAddItem(newItemText);
+                handleAddItem(newItemText, true);
               }
             }}
           />
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             size="icon"
-            onClick={() => handleAddItem(newItemText)}
+            onClick={() => handleAddItem(newItemText, true)}
             disabled={!newItemText.trim()}
           >
             <Plus className="h-4 w-4" />

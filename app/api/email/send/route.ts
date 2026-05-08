@@ -9,15 +9,29 @@ const log = createLogger('email/send');
 export const maxDuration = 30;
 
 const sendEmailSchema = z.object({
-  companyId:               z.enum(['bemec', 'bamore']).default('bemec'),
-  to:                      z.string().email('El campo "to" debe ser un email válido'),
-  toName:                  z.string().optional(),
-  subject:                 z.string().min(1, 'El asunto no puede estar vacío'),
-  body:                    z.string().min(1, 'El cuerpo no puede estar vacío'),
-  cc:                      z.string().optional(),
-  attachmentName:          z.string().optional(),
-  signatureAttachmentName: z.string().optional(),
+  companyId:          z.enum(['bemec', 'bamore']).default('bemec'),
+  to:                 z.string().email('El campo "to" debe ser un email válido'),
+  toName:             z.string().optional(),
+  subject:            z.string().min(1, 'El asunto no puede estar vacío'),
+  body:               z.string().min(1, 'El cuerpo no puede estar vacío'),
+  cc:                 z.string().optional(),
+  attachmentName:     z.string().optional(),
+  // Inline signature image embedded in the HTML body
+  signatureBase64:    z.string().optional(),
+  signatureImageMime: z.string().optional(),
 });
+
+/** Convert plain text to safe HTML (preserves line breaks, escapes special chars). */
+function textToHtml(text: string): string {
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return escaped
+    .split('\n\n')
+    .map(para => `<p style="margin:0 0 1em 0">${para.replace(/\n/g, '<br>')}</p>`)
+    .join('');
+}
 
 interface CompanyMailConfig {
   user: string;
@@ -67,14 +81,15 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
 
     const rawFields = {
-      companyId:               formData.get('companyId') ?? 'bemec',
-      to:                      formData.get('to'),
-      toName:                  formData.get('toName') ?? undefined,
-      subject:                 formData.get('subject'),
-      body:                    formData.get('body'),
-      cc:                      formData.get('cc') ?? undefined,
-      attachmentName:          formData.get('attachmentName') ?? undefined,
-      signatureAttachmentName: formData.get('signatureAttachmentName') ?? undefined,
+      companyId:          formData.get('companyId') ?? 'bemec',
+      to:                 formData.get('to'),
+      toName:             formData.get('toName') ?? undefined,
+      subject:            formData.get('subject'),
+      body:               formData.get('body'),
+      cc:                 formData.get('cc') ?? undefined,
+      attachmentName:     formData.get('attachmentName') ?? undefined,
+      signatureBase64:    formData.get('signatureBase64') ?? undefined,
+      signatureImageMime: formData.get('signatureImageMime') ?? undefined,
     };
 
     const parsed = sendEmailSchema.safeParse(rawFields);
@@ -84,9 +99,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const { companyId, to, toName, subject, body, cc: ccRaw, attachmentName, signatureAttachmentName } = parsed.data;
+    const { companyId, to, toName, subject, body, cc: ccRaw, attachmentName, signatureBase64, signatureImageMime } = parsed.data;
     const attachment = formData.get('attachment') as Blob | null;
-    const signatureAttachment = formData.get('signatureAttachment') as Blob | null;
 
     // Obtener config de la empresa
     const config = getCompanyConfig(companyId);
@@ -117,7 +131,15 @@ export async function POST(request: NextRequest) {
       ? ccRaw.split(',').map((e) => e.trim()).filter(Boolean)
       : [];
 
-    // Construir adjuntos
+    // Construir HTML del cuerpo con firma inline (CID para compatibilidad con Gmail)
+    const sigCid = 'seller-signature@bemec';
+    let htmlBody = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#333">${textToHtml(body)}`;
+    if (signatureBase64 && signatureBase64.length > 0) {
+      htmlBody += `<br><img src="cid:${sigCid}" alt="Firma" style="max-width:480px;height:auto;display:block;margin-top:8px">`;
+    }
+    htmlBody += '</div>';
+
+    // Construir adjunto principal (presupuesto PDF/DOCX)
     const attachments: nodemailer.SendMailOptions['attachments'] = [];
     if (attachment && attachmentName) {
       const buffer = Buffer.from(await attachment.arrayBuffer());
@@ -129,12 +151,14 @@ export async function POST(request: NextRequest) {
           : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       });
     }
-    // Adjunto de firma (logo/imagen del vendedor)
-    if (signatureAttachment && signatureAttachmentName) {
-      const buffer = Buffer.from(await signatureAttachment.arrayBuffer());
+
+    // Adjunto inline de firma (imagen embebida en el cuerpo via CID)
+    if (signatureBase64 && signatureBase64.length > 0) {
       attachments.push({
-        filename: signatureAttachmentName,
-        content: buffer,
+        filename: 'firma',
+        content: Buffer.from(signatureBase64, 'base64'),
+        contentType: signatureImageMime || 'image/jpeg',
+        cid: sigCid,
       });
     }
 
@@ -146,7 +170,8 @@ export async function POST(request: NextRequest) {
       to: toFormatted,
       ...(ccList.length > 0 && { cc: ccList }),
       subject,
-      text: body,
+      text: body,   // fallback para clientes que no soportan HTML
+      html: htmlBody,
       attachments,
     });
 

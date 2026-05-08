@@ -62,18 +62,11 @@ export async function sendEmail(
       form.append('cc', payload.cc.map((r) => r.email).join(','));
     }
 
-    // Adjunto (primer archivo = el presupuesto)
+    // Adjunto principal (presupuesto PDF/DOCX)
     if (payload.attachments.length > 0) {
       const att = payload.attachments[0];
       form.append('attachment', att.content, att.name);
       form.append('attachmentName', att.name);
-    }
-
-    // Adjunto de firma (segundo archivo, opcional)
-    if (payload.attachments.length > 1) {
-      const sig = payload.attachments[1];
-      form.append('signatureAttachment', sig.content, sig.name);
-      form.append('signatureAttachmentName', sig.name);
     }
 
     const res = await fetch('/api/email/send', { method: 'POST', body: form });
@@ -110,36 +103,39 @@ export async function sendBudgetEmail(
   attachment: { name: string; content: Blob },
   ccEmails?: string[],
   companyId?: string,
-  signatureAttachment?: { name: string; content: Blob }
+  signatureImage?: { base64: string; mime: string }
 ): Promise<EmailSendResult> {
-  const attachments: EmailPayload['attachments'] = [
-    {
-      name: attachment.name,
-      content: attachment.content,
-      contentType: attachment.name.endsWith('.pdf')
-        ? 'application/pdf'
-        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    },
-  ];
+  const form = new FormData();
 
-  if (signatureAttachment) {
-    attachments.push({
-      name: signatureAttachment.name,
-      content: signatureAttachment.content,
-      contentType: 'application/octet-stream',
-    });
+  form.append('companyId', companyId || emailConfig.companyId || 'bemec');
+  form.append('to', recipientEmail);
+  if (recipientName) form.append('toName', recipientName);
+  form.append('subject', subject);
+  form.append('body', body);
+  if (ccEmails && ccEmails.length > 0) form.append('cc', ccEmails.join(','));
+
+  // Presupuesto adjunto
+  form.append('attachment', attachment.content, attachment.name);
+  form.append('attachmentName', attachment.name);
+
+  // Imagen de firma inline (base64)
+  if (signatureImage) {
+    form.append('signatureBase64', signatureImage.base64);
+    form.append('signatureImageMime', signatureImage.mime);
   }
 
-  return sendEmail(
-    {
-      to: [{ email: recipientEmail, name: recipientName }],
-      cc: ccEmails?.map((email) => ({ email })),
-      subject,
-      body,
-      attachments,
-    },
-    companyId
-  );
+  try {
+    const res = await fetch('/api/email/send', { method: 'POST', body: form });
+    const data = (await res.json()) as { success: boolean; messageId?: string; error?: string };
+    return data.success
+      ? { success: true, messageId: data.messageId }
+      : { success: false, error: data.error || 'Error al enviar el email' };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Error de red al intentar enviar el email',
+    };
+  }
 }
 
 export async function sendTestEmail(

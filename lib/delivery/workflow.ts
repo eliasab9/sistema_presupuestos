@@ -303,20 +303,12 @@ export async function runDeliveryWorkflow(
       try {
         const ccEmails = settings.emailCc ? parseEmailList(settings.emailCc) : undefined;
 
-        // Resolve signature attachment: prefer explicit Blob in settings,
-        // fall back to base64 stored in budget meta.
-        let sigAttachment: { name: string; content: Blob } | undefined;
-        if (settings.emailSignatureAttachment) {
-          sigAttachment = {
-            name: settings.emailSignatureAttachment.fileName,
-            content: settings.emailSignatureAttachment.file,
-          };
-        } else if (budget.meta.sellerSignatureFileBase64 && budget.meta.sellerSignatureFileName) {
-          const bytes = Uint8Array.from(atob(budget.meta.sellerSignatureFileBase64), c => c.charCodeAt(0));
-          sigAttachment = {
-            name: budget.meta.sellerSignatureFileName,
-            content: new Blob([bytes]),
-          };
+        // Resolve signature image (inline in HTML body)
+        let sigImage: { base64: string; mime: string } | undefined;
+        if (budget.meta.sellerSignatureFileBase64 && budget.meta.sellerSignatureFileName) {
+          const ext = budget.meta.sellerSignatureFileName.split('.').pop()?.toLowerCase() ?? 'jpg';
+          const mimeMap: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' };
+          sigImage = { base64: budget.meta.sellerSignatureFileBase64, mime: mimeMap[ext] ?? 'image/jpeg' };
         }
 
         const emailResult = await sendBudgetEmail(
@@ -329,8 +321,8 @@ export async function runDeliveryWorkflow(
             content: state.generatedFile!.blob,
           },
           ccEmails,
-          budget.companyId,  // ← empresa → elige la cuenta Gmail correcta
-          sigAttachment
+          budget.companyId,
+          sigImage
         );
         
         state.emailResult = emailResult;
@@ -449,15 +441,11 @@ export async function retryWorkflowStep(
   
   if (stepId === 'email') {
     const ccEmails = settings.emailCc ? parseEmailList(settings.emailCc) : undefined;
-    let sigAttachment: { name: string; content: Blob } | undefined;
-    if (settings.emailSignatureAttachment) {
-      sigAttachment = {
-        name: settings.emailSignatureAttachment.fileName,
-        content: settings.emailSignatureAttachment.file,
-      };
-    } else if (budget.meta.sellerSignatureFileBase64 && budget.meta.sellerSignatureFileName) {
-      const bytes = Uint8Array.from(atob(budget.meta.sellerSignatureFileBase64), c => c.charCodeAt(0));
-      sigAttachment = { name: budget.meta.sellerSignatureFileName, content: new Blob([bytes]) };
+    let sigImage: { base64: string; mime: string } | undefined;
+    if (budget.meta.sellerSignatureFileBase64 && budget.meta.sellerSignatureFileName) {
+      const ext = budget.meta.sellerSignatureFileName.split('.').pop()?.toLowerCase() ?? 'jpg';
+      const mimeMap: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' };
+      sigImage = { base64: budget.meta.sellerSignatureFileBase64, mime: mimeMap[ext] ?? 'image/jpeg' };
     }
     const result = await sendBudgetEmail(
       settings.emailTo,
@@ -467,7 +455,7 @@ export async function retryWorkflowStep(
       { name: settings.fileName, content: generatedFile.blob },
       ccEmails,
       budget.companyId,
-      sigAttachment
+      sigImage
     );
     return { success: result.success, error: result.error };
   }
