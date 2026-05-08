@@ -1,28 +1,47 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useBudget } from '@/lib/budget-context';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ClipboardList, Plus, Trash2, GripVertical, X } from 'lucide-react';
+import { ClipboardList, Plus, Trash2, GripVertical, X, Loader2 } from 'lucide-react';
 import { COMMON_WORK_ITEMS, type WorkItem } from '@/types/budget';
-import { getCustomWorkItems, saveCustomWorkItem, deleteCustomWorkItem } from '@/lib/storage/work-items';
+
+interface CustomWorkItem {
+  id: string;
+  description: string;
+}
 
 export function WorkItemsSection() {
   const { budget, addWorkItem, updateWorkItem, removeWorkItem, reorderWorkItems } = useBudget();
   const { workItems } = budget;
+  const companyId = budget.companyId;
   const [newItemText, setNewItemText] = useState('');
-  const [customItems, setCustomItems] = useState<string[]>([]);
+  const [customItems, setCustomItems] = useState<CustomWorkItem[]>([]);
+  const [loadingCustom, setLoadingCustom] = useState(false);
+
+  const fetchCustomItems = useCallback(async () => {
+    setLoadingCustom(true);
+    try {
+      const res = await fetch(`/api/work-items?companyId=${companyId}`);
+      if (res.ok) {
+        const data: CustomWorkItem[] = await res.json();
+        setCustomItems(data);
+      }
+    } finally {
+      setLoadingCustom(false);
+    }
+  }, [companyId]);
 
   useEffect(() => {
-    setCustomItems(getCustomWorkItems());
-  }, []);
+    fetchCustomItems();
+  }, [fetchCustomItems]);
 
-  const allFrequentItems = [...COMMON_WORK_ITEMS, ...customItems];
+  const allFrequentDescriptions = [...COMMON_WORK_ITEMS, ...customItems.map(i => i.description)];
 
-  const handleAddItem = (description: string, saveAsCustom = false) => {
+  const handleAddItem = async (description: string, saveAsCustom = false) => {
     if (!description.trim()) return;
     const newItem: WorkItem = {
       id: crypto.randomUUID(),
@@ -33,10 +52,16 @@ export function WorkItemsSection() {
     addWorkItem(newItem);
     setNewItemText('');
 
-    // If it's a manual entry not already in the combined list, save it
-    if (saveAsCustom && !allFrequentItems.includes(description.trim())) {
-      saveCustomWorkItem(description.trim());
-      setCustomItems(getCustomWorkItems());
+    if (saveAsCustom && !allFrequentDescriptions.includes(description.trim())) {
+      const res = await fetch('/api/work-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyId, description: description.trim() }),
+      });
+      if (res.ok) {
+        const created: CustomWorkItem = await res.json();
+        setCustomItems(prev => [...prev, created]);
+      }
     }
   };
 
@@ -46,9 +71,9 @@ export function WorkItemsSection() {
     handleAddItem(description);
   };
 
-  const handleDeleteCustomItem = (description: string) => {
-    deleteCustomWorkItem(description);
-    setCustomItems(getCustomWorkItems());
+  const handleDeleteCustomItem = async (item: CustomWorkItem) => {
+    await fetch(`/api/work-items/${item.id}`, { method: 'DELETE' });
+    setCustomItems(prev => prev.filter(i => i.id !== item.id));
   };
 
   const handleMoveItem = (index: number, direction: 'up' | 'down') => {
@@ -76,9 +101,13 @@ export function WorkItemsSection() {
         <div className="space-y-2">
           <p className="text-sm font-medium text-muted-foreground">Trabajos frecuentes:</p>
           <div className="grid grid-cols-1 gap-1 max-h-48 overflow-y-auto border rounded-md p-2">
-            {allFrequentItems.map((item) => {
+            {loadingCustom && customItems.length === 0 && (
+              <div className="flex items-center justify-center py-2 text-muted-foreground text-xs">
+                <Loader2 className="h-3 w-3 animate-spin mr-1" />Cargando...
+              </div>
+            )}
+            {COMMON_WORK_ITEMS.map((item) => {
               const isAdded = workItems.some(w => w.description === item);
-              const isCustom = customItems.includes(item);
               return (
                 <div key={item} className="flex items-center group">
                   <button
@@ -92,15 +121,31 @@ export function WorkItemsSection() {
                   >
                     {isAdded ? '✓ ' : '+ '}{item}
                   </button>
-                  {isCustom && (
-                    <button
-                      onClick={() => handleDeleteCustomItem(item)}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition-opacity"
-                      title="Eliminar de la lista"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  )}
+                </div>
+              );
+            })}
+            {customItems.map((item) => {
+              const isAdded = workItems.some(w => w.description === item.description);
+              return (
+                <div key={item.id} className="flex items-center group">
+                  <button
+                    onClick={() => handleAddCommonItem(item.description)}
+                    className={`flex-1 text-left text-sm px-2 py-1 rounded transition-colors ${
+                      isAdded
+                        ? 'bg-primary/10 text-primary cursor-default'
+                        : 'hover:bg-muted cursor-pointer'
+                    }`}
+                    disabled={isAdded}
+                  >
+                    {isAdded ? '✓ ' : '+ '}{item.description}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteCustomItem(item)}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition-opacity"
+                    title="Eliminar de la lista"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                 </div>
               );
             })}

@@ -138,6 +138,19 @@ export const budgets = pgTable('budgets', {
   index('budgets_created_at_idx').on(t.createdAt),
 ]);
 
+// ── work_items ────────────────────────────────────────────────────────────────
+// Trabajos frecuentes personalizados agregados por los vendedores.
+// companyId = null → compartido entre empresas (no se usa por ahora).
+
+export const workItems = pgTable('work_items', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  companyId: text('company_id').notNull(),
+  description: text('description').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('work_items_company_id_idx').on(t.companyId),
+]);
+
 // ── Inferred types ────────────────────────────────────────────────────────────
 
 export type Seller         = typeof sellers.$inferSelect;
@@ -146,5 +159,7 @@ export type Customer       = typeof customers.$inferSelect;
 export type NewCustomer    = typeof customers.$inferInsert;
 export type Template       = typeof templates.$inferSelect;
 export type NewTemplate    = typeof templates.$inferInsert;
+export type WorkItem       = typeof workItems.$inferSelect;
+export type NewWorkItem    = typeof workItems.$inferInsert;
 export type Budget         = typeof budgets.$inferSelect;
 export type NewBudget      = typeof budgets.$inferInsert;
