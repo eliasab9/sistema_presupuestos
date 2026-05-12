@@ -23,7 +23,7 @@ function SectionBreakdown({ section, sectionTotals, primaryColor, isOnly }: {
   const { equipment, workItems, labor, bearings, spareParts, machining } = section;
 
   const equipmentDisplay = [
-    EQUIPMENT_TYPE_LABELS[equipment.type],
+    equipment.customTypeLabel ?? EQUIPMENT_TYPE_LABELS[equipment.type],
     equipment.power ? `${equipment.power} HP` : null,
   ].filter(Boolean).join(' · ');
 
