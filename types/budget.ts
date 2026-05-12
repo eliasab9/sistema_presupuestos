@@ -68,6 +68,7 @@ export type EquipmentType =
 export interface Equipment {
   type: EquipmentType;
   subtype?: string;
+  customTypeLabel?: string; // Set when a custom DB type is selected (type='otro')
   power: number; // HP
   rpm?: number;
   quantity: number;

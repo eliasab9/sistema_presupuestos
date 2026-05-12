@@ -34,7 +34,7 @@ export function buildRepairDocxDownloadHtml(budget: Budget, logoBase64: string):
   const primaryColor = company.primaryColor;
 
   const equipmentDisplay = [
-    EQUIPMENT_TYPE_LABELS[equipment.type] ?? equipment.type,
+    equipment.customTypeLabel ?? EQUIPMENT_TYPE_LABELS[equipment.type] ?? equipment.type,
     equipment.subtype,
     equipment.power ? `${equipment.power} HP` : null,
   ].filter(Boolean).join(' · ');
@@ -168,7 +168,7 @@ export function buildRepairDocxBlobHtml(budget: Budget, logoBase64: string): str
   const primaryColor = company.primaryColor;
 
   const equipmentDisplay = [
-    EQUIPMENT_TYPE_LABELS[equipment.type] ?? equipment.type,
+    equipment.customTypeLabel ?? EQUIPMENT_TYPE_LABELS[equipment.type] ?? equipment.type,
     equipment.subtype,
     equipment.power ? `${equipment.power} HP` : null,
   ].filter(Boolean).join(' · ');

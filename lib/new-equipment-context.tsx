@@ -19,6 +19,7 @@ interface NewEquipmentContextType {
   setMeta: (meta: Partial<BudgetMeta>) => void;
   setCustomer: (customer: Partial<Customer>) => void;
   addItem: (type: NewEquipmentType) => void;
+  addCustomItem: (label: string) => void;
   updateItem: (id: string, updates: Partial<NewEquipmentItem>) => void;
   removeItem: (id: string) => void;
   resetBudget: () => void;
@@ -140,6 +141,15 @@ export function NewEquipmentProvider({ children }: { children: React.ReactNode }
     }));
   }, []);
 
+  const addCustomItem = useCallback((label: string) => {
+    const newItem: NewEquipmentItem = { ...createEmptyItem('otro'), customDescription: label };
+    setBudget(prev => ({
+      ...prev,
+      items: [...prev.items, newItem],
+      updatedAt: new Date().toISOString(),
+    }));
+  }, []);
+
   const updateItem = useCallback((id: string, updates: Partial<NewEquipmentItem>) => {
     setBudget(prev => {
       const items = prev.items.map(item => {
@@ -185,6 +195,7 @@ export function NewEquipmentProvider({ children }: { children: React.ReactNode }
       setMeta,
       setCustomer,
       addItem,
+      addCustomItem,
       updateItem,
       removeItem,
       resetBudget,

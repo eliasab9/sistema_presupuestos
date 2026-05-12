@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNewEquipment } from '@/lib/new-equipment-context';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,7 +14,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Trash2, Zap, Droplets, Settings, Gauge, Package, ChevronsUpDown, Check } from 'lucide-react';
+import { Trash2, Zap, Droplets, Settings, Gauge, Package, ChevronsUpDown, Check, Plus, X, Loader2 } from 'lucide-react';
 import { NEW_EQUIPMENT_TYPE_LABELS, type NewEquipmentType, type NewEquipmentItem } from '@/types/budget';
 import { NewEquipmentDeliveryPanel } from '@/components/delivery/new-equipment-delivery-panel';
 import { SellerPicker, type SellerFromApi } from '@/components/forms/sections/seller-picker';
@@ -248,7 +248,11 @@ function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {EQUIPMENT_ICONS[item.type]}
-            <CardTitle className="text-base">{NEW_EQUIPMENT_TYPE_LABELS[item.type]}</CardTitle>
+            <CardTitle className="text-base">
+              {item.type === 'otro' && item.customDescription
+                ? item.customDescription
+                : NEW_EQUIPMENT_TYPE_LABELS[item.type]}
+            </CardTitle>
           </div>
           <Button
             variant="ghost"
@@ -329,8 +333,49 @@ function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
   );
 }
 
+interface CustomEquipmentType {
+  id: string;
+  label: string;
+}
+
 export function NewEquipmentForm() {
-  const { budget, setMeta, setCustomer, addItem } = useNewEquipment();
+  const { budget, setMeta, setCustomer, addItem, addCustomItem } = useNewEquipment();
+  const [customEquipTypes, setCustomEquipTypes] = useState<CustomEquipmentType[]>([]);
+  const [loadingEquipTypes, setLoadingEquipTypes] = useState(false);
+  const [newEquipTypeName, setNewEquipTypeName] = useState('');
+
+  const fetchCustomEquipTypes = useCallback(async (companyId: string) => {
+    setLoadingEquipTypes(true);
+    try {
+      const res = await fetch(`/api/equipment-types?companyId=${companyId}&budgetType=equipo_nuevo`);
+      if (res.ok) setCustomEquipTypes(await res.json());
+    } finally {
+      setLoadingEquipTypes(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchCustomEquipTypes(budget.companyId); }, [budget.companyId, fetchCustomEquipTypes]);
+
+  const handleAddCustomEquipType = async () => {
+    const label = newEquipTypeName.trim();
+    if (!label) return;
+    setNewEquipTypeName('');
+    const res = await fetch('/api/equipment-types', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId: budget.companyId, budgetType: 'equipo_nuevo', label }),
+    });
+    if (res.ok) {
+      const created: CustomEquipmentType = await res.json();
+      setCustomEquipTypes(prev => [...prev, created]);
+      addCustomItem(label);
+    }
+  };
+
+  const handleDeleteCustomEquipType = async (ct: CustomEquipmentType) => {
+    await fetch(`/api/equipment-types/${ct.id}`, { method: 'DELETE' });
+    setCustomEquipTypes(prev => prev.filter(t => t.id !== ct.id));
+  };
 
   const handleSelectSeller = (seller: SellerFromApi) => {
     setMeta({
@@ -446,19 +491,77 @@ export function NewEquipmentForm() {
           </div>
 
           {/* Add Equipment Buttons */}
-          <div className="flex flex-wrap gap-2 mb-4">
-            {(Object.keys(NEW_EQUIPMENT_TYPE_LABELS) as NewEquipmentType[]).map((type) => (
+          <div className="space-y-3 mb-4">
+            {/* Standard types */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                Tipos de equipo
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {(Object.keys(NEW_EQUIPMENT_TYPE_LABELS) as NewEquipmentType[]).map((type) => (
+                  <Button
+                    key={type}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addItem(type)}
+                    className="gap-1.5 h-8 text-xs"
+                  >
+                    {EQUIPMENT_ICONS[type]}
+                    {NEW_EQUIPMENT_TYPE_LABELS[type]}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom types from DB */}
+            {(loadingEquipTypes && customEquipTypes.length === 0) ? (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" /> Cargando...
+              </div>
+            ) : customEquipTypes.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {customEquipTypes.map((ct) => (
+                  <div key={ct.id} className="flex items-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => addCustomItem(ct.label)}
+                      className="gap-1.5 h-8 text-xs rounded-r-none border-r-0"
+                    >
+                      <Package className="h-3.5 w-3.5" />
+                      {ct.label}
+                    </Button>
+                    <button
+                      onClick={() => handleDeleteCustomEquipType(ct)}
+                      title="Eliminar tipo"
+                      className="flex items-center px-1.5 h-8 rounded-r-md border border-border bg-background text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add custom type input */}
+            <div className="flex gap-2">
+              <input
+                value={newEquipTypeName}
+                onChange={(e) => setNewEquipTypeName(e.target.value)}
+                placeholder="Agregar tipo personalizado..."
+                className="flex-1 h-8 px-3 text-sm rounded-md border border-input bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                onKeyDown={(e) => e.key === 'Enter' && handleAddCustomEquipType()}
+              />
               <Button
-                key={type}
-                variant="outline"
                 size="sm"
-                onClick={() => addItem(type)}
-                className="gap-1"
+                variant="outline"
+                className="h-8 px-2.5 shrink-0"
+                onClick={handleAddCustomEquipType}
+                disabled={!newEquipTypeName.trim()}
               >
-                {EQUIPMENT_ICONS[type]}
-                {NEW_EQUIPMENT_TYPE_LABELS[type]}
+                <Plus className="h-3.5 w-3.5" />
               </Button>
-            ))}
+            </div>
           </div>
 
           {/* Equipment List */}

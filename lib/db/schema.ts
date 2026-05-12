@@ -151,15 +151,31 @@ export const workItems = pgTable('work_items', {
   index('work_items_company_id_idx').on(t.companyId),
 ]);
 
+// ── equipment_types ───────────────────────────────────────────────────────────
+// Tipos de equipo personalizados por empresa y tipo de presupuesto.
+// budgetType: 'reparacion' | 'equipo_nuevo'
+
+export const equipmentTypes = pgTable('equipment_types', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  companyId:  text('company_id').notNull(),
+  budgetType: text('budget_type').notNull(), // 'reparacion' | 'equipo_nuevo'
+  label:      text('label').notNull(),
+  createdAt:  timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('equipment_types_company_id_idx').on(t.companyId),
+]);
+
 // ── Inferred types ────────────────────────────────────────────────────────────
 
-export type Seller         = typeof sellers.$inferSelect;
-export type NewSeller      = typeof sellers.$inferInsert;
-export type Customer       = typeof customers.$inferSelect;
-export type NewCustomer    = typeof customers.$inferInsert;
-export type Template       = typeof templates.$inferSelect;
-export type NewTemplate    = typeof templates.$inferInsert;
-export type WorkItem       = typeof workItems.$inferSelect;
-export type NewWorkItem    = typeof workItems.$inferInsert;
-export type Budget         = typeof budgets.$inferSelect;
-export type NewBudget      = typeof budgets.$inferInsert;
+export type Seller              = typeof sellers.$inferSelect;
+export type NewSeller           = typeof sellers.$inferInsert;
+export type Customer            = typeof customers.$inferSelect;
+export type NewCustomer         = typeof customers.$inferInsert;
+export type Template            = typeof templates.$inferSelect;
+export type NewTemplate         = typeof templates.$inferInsert;
+export type WorkItem            = typeof workItems.$inferSelect;
+export type NewWorkItem         = typeof workItems.$inferInsert;
+export type EquipmentTypeRow    = typeof equipmentTypes.$inferSelect;
+export type NewEquipmentTypeRow = typeof equipmentTypes.$inferInsert;
+export type Budget              = typeof budgets.$inferSelect;
+export type NewBudget           = typeof budgets.$inferInsert;
