@@ -79,7 +79,7 @@ export function CustomerManager({ company, onSelectCustomer, onNewBudgetWithoutC
 
   useEffect(() => {
     if (searchQuery) {
-      setCustomers(searchCustomers(searchQuery, company.id));
+      searchCustomers(searchQuery, company.id).then(setCustomers);
     } else {
       loadCustomers();
     }
@@ -87,7 +87,7 @@ export function CustomerManager({ company, onSelectCustomer, onNewBudgetWithoutC
   }, [searchQuery, company.id]);
 
   const loadCustomers = () => {
-    setCustomers(getAllCustomers(company.id));
+    getAllCustomers(company.id).then(setCustomers);
   };
 
   const resetForm = () => {
@@ -126,7 +126,7 @@ export function CustomerManager({ company, onSelectCustomer, onNewBudgetWithoutC
     setIsFormOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name.trim()) {
       toast.error('El nombre del cliente es requerido');
       return;
@@ -134,10 +134,10 @@ export function CustomerManager({ company, onSelectCustomer, onNewBudgetWithoutC
 
     if (editingCustomer) {
       // Editar = anclar a la empresa actual (soft migration de clientes legacy)
-      updateCustomer(editingCustomer.id, { ...formData, companyId: company.id });
+      await updateCustomer(editingCustomer.id, { ...formData, companyId: company.id });
       toast.success('Cliente actualizado');
     } else {
-      saveCustomer({ ...formData, companyId: company.id });
+      await saveCustomer({ ...formData, companyId: company.id });
       toast.success('Cliente guardado');
     }
 
@@ -146,8 +146,8 @@ export function CustomerManager({ company, onSelectCustomer, onNewBudgetWithoutC
     resetForm();
   };
 
-  const handleDelete = (id: string) => {
-    deleteCustomer(id);
+  const handleDelete = async (id: string) => {
+    await deleteCustomer(id);
     loadCustomers();
     setDeleteConfirmId(null);
     toast.success('Cliente eliminado');

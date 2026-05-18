@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useBudget } from '@/lib/budget-context';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -24,12 +24,19 @@ import {
 export function ObservationsSection() {
   const { budget, setMeta } = useBudget();
   const { meta } = budget;
-  const [templates, setTemplates] = useState<ObservationTemplate[]>(() => getAllTemplates());
+  const companyId = budget.companyId;
+  const [templates, setTemplates] = useState<ObservationTemplate[]>([]);
   const [openLoad, setOpenLoad] = useState(false);
   const [openSave, setOpenSave] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
 
-  const refreshTemplates = () => setTemplates(getAllTemplates());
+  const refreshTemplates = useCallback(() => {
+    getAllTemplates(companyId).then(setTemplates);
+  }, [companyId]);
+
+  useEffect(() => {
+    refreshTemplates();
+  }, [refreshTemplates]);
 
   const handleInsert = (template: ObservationTemplate, mode: 'replace' | 'append') => {
     const current = meta.generalNotes ?? '';
@@ -41,13 +48,13 @@ export function ObservationsSection() {
     toast.success(`Plantilla "${template.name}" insertada`);
   };
 
-  const handleDelete = (id: string, name: string) => {
-    deleteTemplate(id);
+  const handleDelete = async (id: string, name: string) => {
+    await deleteTemplate(id);
     refreshTemplates();
     toast.success(`Plantilla "${name}" eliminada`);
   };
 
-  const handleSaveTemplate = () => {
+  const handleSaveTemplate = async () => {
     const content = (meta.generalNotes ?? '').trim();
     const name = newTemplateName.trim();
     if (!name) {
@@ -58,7 +65,7 @@ export function ObservationsSection() {
       toast.error('La observación está vacía');
       return;
     }
-    saveTemplate(name, content);
+    await saveTemplate(name, content, companyId);
     refreshTemplates();
     setNewTemplateName('');
     setOpenSave(false);

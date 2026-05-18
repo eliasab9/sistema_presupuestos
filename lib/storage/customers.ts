@@ -1,184 +1,97 @@
 import type { Customer, CompanyId } from '@/types/budget';
 
-const STORAGE_KEY = 'bemec_customers';
+// Migration flag — prevents re-migrating existing localStorage data on every load
+const LS_MIGRATED_KEY = 'bemec_customers_migrated_v1';
+const LS_LEGACY_KEY = 'bemec_customers';
 
-// Mock initial customers
-const MOCK_CUSTOMERS: Customer[] = [
-  {
-    id: '1',
-    name: 'Desarrolladora Monteverdi',
-    attention: 'Ing. Carlos Pérez',
-    email: 'cperez@monteverdi.com.ar',
-    phone: '+54 261 555-1234',
-    cuit: '30-71234567-8',
-    address: 'Av. San Martín 1250',
-    locality: 'Mendoza',
-    province: 'Mendoza',
-    notes: 'Cliente frecuente - prioridad alta',
-    createdAt: '2024-01-15T10:00:00Z',
-    updatedAt: '2024-01-15T10:00:00Z',
-  },
-  {
-    id: '2',
-    name: 'Bodega Los Andes S.A.',
-    attention: 'Martín Rodríguez',
-    email: 'mantenimiento@bodegalosandes.com',
-    phone: '+54 261 555-5678',
-    cuit: '30-65432198-7',
-    address: 'Ruta 40 Km 25',
-    locality: 'Luján de Cuyo',
-    province: 'Mendoza',
-    notes: '',
-    createdAt: '2024-02-20T14:30:00Z',
-    updatedAt: '2024-02-20T14:30:00Z',
-  },
-  {
-    id: '3',
-    name: 'Agrícola del Valle',
-    attention: 'Roberto Fernández',
-    email: 'rfernandez@agricoladelvalle.com',
-    phone: '+54 261 555-9012',
-    cuit: '20-25678901-4',
-    address: 'Calle Las Heras 456',
-    locality: 'San Rafael',
-    province: 'Mendoza',
-    notes: 'Contactar siempre por WhatsApp',
-    createdAt: '2024-03-10T09:15:00Z',
-    updatedAt: '2024-03-10T09:15:00Z',
-  },
-];
+// UUIDs of the original mock customers that should NOT be migrated
+const MOCK_IDS = new Set(['1', '2', '3']);
 
-/**
- * Initialize storage with mock data if empty
- */
-function initializeStorage(): void {
+async function migrateFromLocalStorage(companyId?: CompanyId): Promise<void> {
   if (typeof window === 'undefined') return;
-  
-  const existing = localStorage.getItem(STORAGE_KEY);
-  if (!existing) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(MOCK_CUSTOMERS));
-  }
-}
+  if (localStorage.getItem(LS_MIGRATED_KEY)) return;
 
-/**
- * Get all customers from storage.
- * If companyId is provided, returns customers tagged for that company plus untagged (legacy) ones.
- */
-export function getAllCustomers(companyId?: CompanyId): Customer[] {
-  if (typeof window === 'undefined') {
-    return companyId
-      ? MOCK_CUSTOMERS.filter(c => !c.companyId || c.companyId === companyId)
-      : MOCK_CUSTOMERS;
-  }
+  localStorage.setItem(LS_MIGRATED_KEY, '1'); // mark before async ops to avoid races
 
-  initializeStorage();
-
-  const data = localStorage.getItem(STORAGE_KEY);
-  if (!data) return [];
+  const raw = localStorage.getItem(LS_LEGACY_KEY);
+  if (!raw) return;
 
   try {
-    const all = JSON.parse(data) as Customer[];
-    if (!companyId) return all;
-    return all.filter(c => !c.companyId || c.companyId === companyId);
+    const all: Customer[] = JSON.parse(raw);
+    const real = all.filter((c) => !MOCK_IDS.has(c.id));
+    await Promise.all(
+      real.map((c) =>
+        fetch('/api/customers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...c, companyId: c.companyId ?? companyId ?? null }),
+        })
+      )
+    );
   } catch {
-    return [];
+    // Non-fatal: migration best-effort only
   }
 }
 
-/**
- * Get a customer by ID
- */
-export function getCustomerById(id: string): Customer | undefined {
-  const customers = getAllCustomers();
-  return customers.find(c => c.id === id);
+export async function getAllCustomers(companyId?: CompanyId): Promise<Customer[]> {
+  const params = new URLSearchParams();
+  if (companyId) params.set('companyId', companyId);
+
+  const res = await fetch(`/api/customers?${params}`);
+  if (!res.ok) return [];
+  const data: Customer[] = await res.json();
+
+  // One-time migration: if DB is empty for this company and localStorage has real customers
+  if (data.length === 0) {
+    await migrateFromLocalStorage(companyId);
+    const res2 = await fetch(`/api/customers?${params}`);
+    if (res2.ok) return res2.json();
+  }
+
+  return data;
 }
 
-/**
- * Search customers by name, email, or cuit, optionally filtered by company.
- */
-export function searchCustomers(query: string, companyId?: CompanyId): Customer[] {
+export async function searchCustomers(query: string, companyId?: CompanyId): Promise<Customer[]> {
   if (!query.trim()) return getAllCustomers(companyId);
-
-  const customers = getAllCustomers(companyId);
-  const lowerQuery = query.toLowerCase();
-  
-  return customers.filter(c => 
-    c.name.toLowerCase().includes(lowerQuery) ||
-    c.email?.toLowerCase().includes(lowerQuery) ||
-    c.cuit?.toLowerCase().includes(lowerQuery) ||
-    c.attention?.toLowerCase().includes(lowerQuery)
-  );
+  const params = new URLSearchParams();
+  if (companyId) params.set('companyId', companyId);
+  params.set('q', query);
+  const res = await fetch(`/api/customers?${params}`);
+  if (!res.ok) return [];
+  return res.json();
 }
 
-/**
- * Save a new customer
- */
-export function saveCustomer(customer: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>): Customer {
-  const customers = getAllCustomers();
-  
-  const newCustomer: Customer = {
-    ...customer,
-    id: crypto.randomUUID(),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  
-  customers.push(newCustomer);
-  
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(customers));
-  }
-  
-  return newCustomer;
+export async function saveCustomer(
+  customer: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>
+): Promise<Customer> {
+  const res = await fetch('/api/customers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(customer),
+  });
+  return res.json();
 }
 
-/**
- * Update an existing customer
- */
-export function updateCustomer(id: string, updates: Partial<Customer>): Customer | undefined {
-  const customers = getAllCustomers();
-  const index = customers.findIndex(c => c.id === id);
-  
-  if (index === -1) return undefined;
-  
-  const updatedCustomer: Customer = {
-    ...customers[index],
-    ...updates,
-    id, // Ensure ID doesn't change
-    createdAt: customers[index].createdAt, // Preserve creation date
-    updatedAt: new Date().toISOString(),
-  };
-  
-  customers[index] = updatedCustomer;
-  
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(customers));
-  }
-  
-  return updatedCustomer;
+export async function updateCustomer(
+  id: string,
+  updates: Partial<Customer>
+): Promise<Customer | undefined> {
+  const res = await fetch(`/api/customers/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) return undefined;
+  return res.json();
 }
 
-/**
- * Delete a customer
- */
-export function deleteCustomer(id: string): boolean {
-  const customers = getAllCustomers();
-  const filtered = customers.filter(c => c.id !== id);
-  
-  if (filtered.length === customers.length) return false;
-  
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
-  }
-  
-  return true;
+export async function deleteCustomer(id: string): Promise<boolean> {
+  const res = await fetch(`/api/customers/${id}`, { method: 'DELETE' });
+  return res.ok;
 }
 
-/**
- * Reset storage to mock data
- */
-export function resetToMockData(): void {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(MOCK_CUSTOMERS));
-  }
+export async function getCustomerById(id: string): Promise<Customer | undefined> {
+  const res = await fetch(`/api/customers/${id}`);
+  if (!res.ok) return undefined;
+  return res.json();
 }

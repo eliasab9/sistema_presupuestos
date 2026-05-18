@@ -46,14 +46,14 @@ export function CustomerSelector({ value, onChange, onSaveCustomer, companyId }:
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   useEffect(() => {
-    setCustomers(getAllCustomers(companyId));
+    getAllCustomers(companyId).then(setCustomers);
   }, [companyId]);
 
   useEffect(() => {
     if (searchQuery) {
-      setCustomers(searchCustomers(searchQuery, companyId));
+      searchCustomers(searchQuery, companyId).then(setCustomers);
     } else {
-      setCustomers(getAllCustomers(companyId));
+      getAllCustomers(companyId).then(setCustomers);
     }
   }, [searchQuery, companyId]);
 
@@ -80,10 +80,10 @@ export function CustomerSelector({ value, onChange, onSaveCustomer, companyId }:
     setHasUnsavedChanges(true);
   }, [value, onChange]);
 
-  const handleSaveAsNew = useCallback(() => {
+  const handleSaveAsNew = useCallback(async () => {
     if (!value.name) return;
-    
-    const newCustomer = saveCustomer({
+
+    const newCustomer = await saveCustomer({
       name: value.name || '',
       attention: value.attention,
       email: value.email,
@@ -98,16 +98,16 @@ export function CustomerSelector({ value, onChange, onSaveCustomer, companyId }:
 
     setSelectedCustomerId(newCustomer.id);
     onChange({ ...value, id: newCustomer.id });
-    setCustomers(getAllCustomers(companyId));
+    getAllCustomers(companyId).then(setCustomers);
     setHasUnsavedChanges(false);
     onSaveCustomer?.(newCustomer);
     setShowNewDialog(false);
   }, [value, onChange, onSaveCustomer, companyId]);
 
-  const handleUpdateExisting = useCallback(() => {
+  const handleUpdateExisting = useCallback(async () => {
     if (!selectedCustomerId || !value.name) return;
-    
-    const updated = updateCustomer(selectedCustomerId, {
+
+    const updated = await updateCustomer(selectedCustomerId, {
       name: value.name,
       attention: value.attention,
       email: value.email,
@@ -121,7 +121,7 @@ export function CustomerSelector({ value, onChange, onSaveCustomer, companyId }:
     });
 
     if (updated) {
-      setCustomers(getAllCustomers(companyId));
+      getAllCustomers(companyId).then(setCustomers);
       setHasUnsavedChanges(false);
       onSaveCustomer?.(updated);
     }
