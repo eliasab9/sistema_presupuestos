@@ -18,6 +18,7 @@ interface NewEquipmentContextType {
   setCompany: (companyId: CompanyId) => void;
   setMeta: (meta: Partial<BudgetMeta>) => void;
   setCustomer: (customer: Partial<Customer>) => void;
+  setShowTotal: (show: boolean) => void;
   addItem: (type: NewEquipmentType) => void;
   addCustomItem: (label: string) => void;
   updateItem: (id: string, updates: Partial<NewEquipmentItem>) => void;
@@ -65,6 +66,7 @@ function createEmptyBudget(): NewEquipmentBudget {
     taxes: [],
     totalTax: 0,
     totalFinal: 0,
+    showTotal: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -132,6 +134,10 @@ export function NewEquipmentProvider({ children }: { children: React.ReactNode }
     }));
   }, []);
 
+  const setShowTotal = useCallback((show: boolean) => {
+    setBudget(prev => ({ ...prev, showTotal: show, updatedAt: new Date().toISOString() }));
+  }, []);
+
   const addItem = useCallback((type: NewEquipmentType) => {
     const newItem = createEmptyItem(type);
     setBudget(prev => ({
@@ -196,6 +202,7 @@ export function NewEquipmentProvider({ children }: { children: React.ReactNode }
       setCustomer,
       addItem,
       addCustomItem,
+      setShowTotal,
       updateItem,
       removeItem,
       resetBudget,

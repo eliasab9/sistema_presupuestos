@@ -4,10 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useBudget } from '@/lib/budget-context';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ClipboardList, Plus, Trash2, ArrowUp, ArrowDown, X, Loader2, Check } from 'lucide-react';
+import { ClipboardList, Plus, X, Loader2, GripVertical } from 'lucide-react';
 import { COMMON_WORK_ITEMS, type WorkItem } from '@/types/budget';
 
 interface CustomWorkItem {
@@ -16,12 +15,13 @@ interface CustomWorkItem {
 }
 
 export function WorkItemsSection() {
-  const { budget, addWorkItem, updateWorkItem, removeWorkItem, reorderWorkItems } = useBudget();
+  const { budget, addWorkItem, removeWorkItem, reorderWorkItems } = useBudget();
   const { workItems } = budget;
   const companyId = budget.companyId;
   const [newItemText, setNewItemText] = useState('');
   const [customItems, setCustomItems] = useState<CustomWorkItem[]>([]);
   const [loadingCustom, setLoadingCustom] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const fetchCustomItems = useCallback(async () => {
     setLoadingCustom(true);
@@ -40,7 +40,25 @@ export function WorkItemsSection() {
     ...customItems.map(i => i.description),
   ];
 
-  const handleAddItem = async (description: string, saveAsCustom = false) => {
+  const handleToggleChip = async (description: string, isCustom = false, customRef: CustomWorkItem | null = null) => {
+    const existing = workItems.find(w => w.description === description);
+    if (existing) {
+      // Already selected → remove it
+      removeWorkItem(existing.id);
+    } else {
+      // Not selected → add it
+      const newItem: WorkItem = {
+        id: crypto.randomUUID(),
+        description: description.trim(),
+        affectsCalculation: true,
+        order: workItems.length,
+      };
+      addWorkItem(newItem);
+    }
+    void isCustom; void customRef; // currently unused but kept for future custom handling
+  };
+
+  const handleAddCustom = async (description: string) => {
     if (!description.trim()) return;
     const newItem: WorkItem = {
       id: crypto.randomUUID(),
@@ -51,7 +69,7 @@ export function WorkItemsSection() {
     addWorkItem(newItem);
     setNewItemText('');
 
-    if (saveAsCustom && !allFrequentDescriptions.includes(description.trim())) {
+    if (!allFrequentDescriptions.includes(description.trim())) {
       const res = await fetch('/api/work-items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -64,22 +82,25 @@ export function WorkItemsSection() {
     }
   };
 
-  const handleAddCommonItem = (description: string) => {
-    if (workItems.some(item => item.description === description)) return;
-    handleAddItem(description);
-  };
-
-  const handleDeleteCustomItem = async (item: CustomWorkItem) => {
+  const handleDeleteCustomItem = async (e: React.MouseEvent, item: CustomWorkItem) => {
+    e.stopPropagation();
     await fetch(`/api/work-items/${item.id}`, { method: 'DELETE' });
     setCustomItems(prev => prev.filter(i => i.id !== item.id));
+    // Also remove from work list if selected
+    const existing = workItems.find(w => w.description === item.description);
+    if (existing) removeWorkItem(existing.id);
   };
 
-  const handleMoveItem = (index: number, direction: 'up' | 'down') => {
-    const newIndex = direction === 'up' ? index - 1 : index + 1;
-    if (newIndex < 0 || newIndex >= workItems.length) return;
+  // Drag-to-reorder
+  const handleDragStart = (index: number) => setDragIndex(index);
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (dragIndex === null || dragIndex === index) return;
     const newItems = [...workItems];
-    [newItems[index], newItems[newIndex]] = [newItems[newIndex], newItems[index]];
+    const [moved] = newItems.splice(dragIndex, 1);
+    newItems.splice(index, 0, moved);
     reorderWorkItems(newItems.map((item, i) => ({ ...item, order: i })));
+    setDragIndex(index);
   };
 
   const allQuickItems = [
@@ -105,10 +126,10 @@ export function WorkItemsSection() {
 
       <CardContent className="space-y-4">
 
-        {/* ── Quick-add: chip list ─────────────────────────────────────── */}
+        {/* ── Chips toggleables ────────────────────────────────────────── */}
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Trabajos frecuentes
+            Seleccioná los trabajos
           </p>
 
           {loadingCustom && customItems.length === 0 ? (
@@ -116,33 +137,32 @@ export function WorkItemsSection() {
               <Loader2 className="h-3 w-3 animate-spin" /> Cargando...
             </div>
           ) : (
-            <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
+            <div className="flex flex-wrap gap-1.5 max-h-52 overflow-y-auto pr-1">
               {allQuickItems.map((item) => {
-                const isAdded = workItems.some(w => w.description === item.description);
+                const isSelected = workItems.some(w => w.description === item.description);
                 return (
-                  <div key={item.key} className="flex items-center">
+                  <div key={item.key} className="flex items-center group/chip">
                     <button
-                      onClick={() => handleAddCommonItem(item.description)}
-                      disabled={isAdded}
+                      onClick={() => handleToggleChip(item.description, item.isCustom, item.customRef)}
                       className={[
-                        'inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium border transition-all',
+                        'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border transition-all duration-150',
                         item.isCustom ? 'rounded-l-full border-r-0' : 'rounded-full',
-                        isAdded
-                          ? 'bg-primary/10 text-primary border-primary/30 cursor-default'
-                          : 'bg-background border-border text-foreground hover:bg-muted hover:border-primary/40 cursor-pointer',
+                        isSelected
+                          ? 'bg-primary text-primary-foreground border-primary shadow-sm hover:bg-primary/80'
+                          : 'bg-background border-border text-foreground hover:border-primary/50 hover:bg-muted/60 cursor-pointer',
                       ].join(' ')}
                     >
-                      {isAdded
-                        ? <Check className="h-3 w-3 shrink-0" />
-                        : <Plus className="h-3 w-3 shrink-0" />}
+                      {isSelected
+                        ? <X className="h-3 w-3 shrink-0" />
+                        : <Plus className="h-3 w-3 shrink-0 text-muted-foreground" />}
                       {item.description}
                     </button>
 
                     {item.isCustom && (
                       <button
-                        onClick={() => handleDeleteCustomItem(item.customRef!)}
+                        onClick={(e) => handleDeleteCustomItem(e, item.customRef!)}
                         title="Eliminar de la lista"
-                        className="inline-flex items-center px-1.5 py-1 rounded-r-full border border-border bg-background text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors"
+                        className="inline-flex items-center px-1.5 py-1.5 rounded-r-full border border-border bg-background text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors"
                       >
                         <X className="h-2.5 w-2.5" />
                       </button>
@@ -152,89 +172,62 @@ export function WorkItemsSection() {
               })}
             </div>
           )}
+          <p className="text-[11px] text-muted-foreground">
+            Click para agregar · Click nuevamente para quitar
+          </p>
         </div>
 
-        {/* ── Add custom work item ─────────────────────────────────────── */}
+        {/* ── Agregar trabajo personalizado ────────────────────────────── */}
         <div className="flex gap-2">
           <Input
             value={newItemText}
             onChange={(e) => setNewItemText(e.target.value)}
-            placeholder="Agregar trabajo personalizado..."
+            placeholder="Agregar trabajo no listado..."
             className="flex-1 h-9"
-            onKeyDown={(e) => { if (e.key === 'Enter') handleAddItem(newItemText, true); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAddCustom(newItemText); }}
           />
           <Button
             variant="outline"
             size="icon"
             className="h-9 w-9 shrink-0"
-            onClick={() => handleAddItem(newItemText, true)}
+            onClick={() => handleAddCustom(newItemText)}
             disabled={!newItemText.trim()}
           >
             <Plus className="h-4 w-4" />
           </Button>
         </div>
 
-        {/* ── Added items list ─────────────────────────────────────────── */}
+        {/* ── Lista ordenable de trabajos seleccionados ────────────────── */}
         {workItems.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Trabajos agregados
+              Orden en el presupuesto
             </p>
             <div className="space-y-1">
               {workItems.map((item, index) => (
                 <div
                   key={item.id}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/40 border border-transparent hover:border-border hover:bg-muted/60 group transition-all"
+                  draggable
+                  onDragStart={() => handleDragStart(index)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragEnd={() => setDragIndex(null)}
+                  className={[
+                    'flex items-center gap-2 px-2 py-1.5 rounded-lg border transition-all cursor-grab active:cursor-grabbing',
+                    dragIndex === index ? 'bg-primary/5 border-primary/30 opacity-70' : 'bg-muted/30 border-transparent hover:border-border hover:bg-muted/50',
+                  ].join(' ')}
                 >
-                  {/* Reorder arrows */}
-                  <div className="flex flex-col gap-0.5 shrink-0">
-                    <button
-                      onClick={() => handleMoveItem(index, 'up')}
-                      disabled={index === 0}
-                      className="text-muted-foreground/40 hover:text-muted-foreground disabled:opacity-20 transition-colors"
-                    >
-                      <ArrowUp className="h-2.5 w-2.5" />
-                    </button>
-                    <button
-                      onClick={() => handleMoveItem(index, 'down')}
-                      disabled={index === workItems.length - 1}
-                      className="text-muted-foreground/40 hover:text-muted-foreground disabled:opacity-20 transition-colors"
-                    >
-                      <ArrowDown className="h-2.5 w-2.5" />
-                    </button>
-                  </div>
-
-                  {/* Affects calculation checkbox */}
-                  <Checkbox
-                    checked={item.affectsCalculation}
-                    onCheckedChange={(checked) =>
-                      updateWorkItem(item.id, { affectsCalculation: !!checked })
-                    }
-                    title="Afecta al cálculo de mano de obra"
-                    className="shrink-0"
-                  />
-
-                  {/* Description */}
-                  <Input
-                    value={item.description}
-                    onChange={(e) => updateWorkItem(item.id, { description: e.target.value })}
-                    className="flex-1 h-7 text-sm border-0 bg-transparent px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-                  />
-
-                  {/* Delete */}
+                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+                  <span className="text-xs text-muted-foreground w-4 shrink-0 tabular-nums">{index + 1}.</span>
+                  <span className="flex-1 text-sm">{item.description}</span>
                   <button
                     onClick={() => removeWorkItem(item.id)}
-                    title="Eliminar"
-                    className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive transition-all shrink-0"
+                    className="p-0.5 text-muted-foreground/40 hover:text-destructive transition-colors shrink-0"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground">
-              ☑ Checkbox marcado = afecta al cálculo de mano de obra
-            </p>
           </div>
         )}
       </CardContent>

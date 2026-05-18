@@ -348,6 +348,7 @@ export interface NewEquipmentBudget {
   taxes: TaxLine[];
   totalTax: number;
   totalFinal: number;
+  showTotal: boolean; // Whether to display the subtotal row in the budget document
   createdAt: string;
   updatedAt: string;
 }

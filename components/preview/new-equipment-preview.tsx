@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 export function NewEquipmentPreview() {
   const { budget } = useNewEquipment();
-  const { meta, customer, items, subtotalItems } = budget;
+  const { meta, customer, items, subtotalItems, showTotal } = budget;
 
   const company = COMPANIES[budget.companyId];
   const primaryColor = company.primaryColor;
@@ -212,23 +212,25 @@ export function NewEquipmentPreview() {
               )}
             </section>
 
-            {/* Subtotal */}
-            <section style={{ 
-              borderTop: `3px solid ${primaryColor}`,
-              paddingTop: '10px',
-              marginBottom: '15px',
-            }}>
-              <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center',
-                fontSize: '14px',
-                fontWeight: 'bold',
+            {/* Subtotal — only rendered when showTotal is enabled */}
+            {showTotal !== false && (
+              <section style={{
+                borderTop: `3px solid ${primaryColor}`,
+                paddingTop: '10px',
+                marginBottom: '15px',
               }}>
-                <span>SUBTOTAL</span>
-                <span style={{ color: primaryColor }}>{formatCurrency(subtotalItems)}</span>
-              </div>
-            </section>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                }}>
+                  <span>SUBTOTAL</span>
+                  <span style={{ color: primaryColor }}>{formatCurrency(subtotalItems)}</span>
+                </div>
+              </section>
+            )}
 
             {/* Observations */}
             <section style={{ marginBottom: '15px' }}>

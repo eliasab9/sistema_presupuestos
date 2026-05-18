@@ -339,7 +339,7 @@ interface CustomEquipmentType {
 }
 
 export function NewEquipmentForm() {
-  const { budget, setMeta, setCustomer, addItem, addCustomItem } = useNewEquipment();
+  const { budget, setMeta, setCustomer, setShowTotal, addItem, addCustomItem } = useNewEquipment();
   const [customEquipTypes, setCustomEquipTypes] = useState<CustomEquipmentType[]>([]);
   const [loadingEquipTypes, setLoadingEquipTypes] = useState(false);
   const [newEquipTypeName, setNewEquipTypeName] = useState('');
@@ -386,7 +386,7 @@ export function NewEquipmentForm() {
       sellerSignatureFileBase64: seller.signatureFileBase64 ?? '',
     });
   };
-  const { meta, customer, items, subtotalItems } = budget;
+  const { meta, customer, items, subtotalItems, showTotal } = budget;
 
   return (
     <ScrollArea className="h-full">
@@ -597,9 +597,20 @@ export function NewEquipmentForm() {
                 <span className="text-sm text-muted-foreground">/ U$S</span>
               </div>
             </div>
-            <div className="flex items-center justify-between text-lg font-bold">
-              <span>SUBTOTAL</span>
-              <span>{formatCurrency(subtotalItems)}</span>
+            {/* Toggle total visibility */}
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showTotal}
+                  onChange={(e) => setShowTotal(e.target.checked)}
+                  className="h-4 w-4 rounded border-border accent-primary"
+                />
+                <span className="text-sm text-muted-foreground">Mostrar total en el presupuesto</span>
+              </label>
+              {showTotal && (
+                <span className="text-lg font-bold">{formatCurrency(subtotalItems)}</span>
+              )}
             </div>
           </div>
         </section>
