@@ -4,6 +4,7 @@ import {
   text,
   boolean,
   numeric,
+  integer,
   timestamp,
   jsonb,
   index,
@@ -143,12 +144,18 @@ export const budgets = pgTable('budgets', {
 // companyId = null → compartido entre empresas (no se usa por ahora).
 
 export const workItems = pgTable('work_items', {
-  id:        uuid('id').primaryKey().defaultRandom(),
-  companyId: text('company_id').notNull(),
-  description: text('description').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  id:            uuid('id').primaryKey().defaultRandom(),
+  companyId:     text('company_id').notNull(),
+  // equipmentType: which repair equipment type this chip belongs to.
+  // null = legacy global item (shown everywhere, pre-migration).
+  // any EquipmentType value = shown only for that type.
+  equipmentType: text('equipment_type'),
+  description:   text('description').notNull(),
+  sortOrder:     integer('sort_order').notNull().default(0),
+  createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('work_items_company_id_idx').on(t.companyId),
+  index('work_items_company_type_idx').on(t.companyId, t.equipmentType),
 ]);
 
 // ── equipment_types ───────────────────────────────────────────────────────────

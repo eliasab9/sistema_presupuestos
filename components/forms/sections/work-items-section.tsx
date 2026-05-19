@@ -7,108 +7,103 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ClipboardList, Plus, X, Loader2, GripVertical } from 'lucide-react';
-import { WORK_ITEMS_BY_EQUIPMENT_TYPE, EQUIPMENT_TYPE_LABELS, type WorkItem } from '@/types/budget';
+import { EQUIPMENT_TYPE_LABELS, type WorkItem } from '@/types/budget';
 
-interface CustomWorkItem {
+// A chip row returned from the DB
+interface ChipRow {
   id: string;
   description: string;
+  equipmentType: string | null;
 }
 
 export function WorkItemsSection() {
   const { budget, addWorkItem, removeWorkItem, reorderWorkItems } = useBudget();
-  const { workItems, equipment, companyId } = budget;
+  const { workItems, equipment } = budget;
   const equipmentType = equipment.type;
+  const companyId = budget.companyId;
+
   const [newItemText, setNewItemText] = useState('');
-  const [customItems, setCustomItems] = useState<CustomWorkItem[]>([]);
-  const [loadingCustom, setLoadingCustom] = useState(false);
+  // All chips for the active equipment type (from DB, auto-seeded on first load)
+  const [chips, setChips] = useState<ChipRow[]>([]);
+  const [loadingChips, setLoadingChips] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
-  const fetchCustomItems = useCallback(async () => {
-    setLoadingCustom(true);
+  const fetchChips = useCallback(async () => {
+    setLoadingChips(true);
     try {
-      const res = await fetch(`/api/work-items?companyId=${budget.companyId}`);
-      if (res.ok) setCustomItems(await res.json());
+      const res = await fetch(`/api/work-items?companyId=${companyId}&equipmentType=${equipmentType}`);
+      if (res.ok) setChips(await res.json());
     } finally {
-      setLoadingCustom(false);
+      setLoadingChips(false);
     }
-  }, [budget.companyId]);
+  }, [companyId, equipmentType]);
 
-  useEffect(() => { fetchCustomItems(); }, [fetchCustomItems]);
+  // Reload chips whenever company or equipment type changes
+  useEffect(() => { fetchChips(); }, [fetchChips]);
 
-  // Suggested items for the active equipment type, plus any DB-saved custom items
-  const suggestedForType = WORK_ITEMS_BY_EQUIPMENT_TYPE[equipmentType] ?? WORK_ITEMS_BY_EQUIPMENT_TYPE.otro;
-  const allFrequentDescriptions = [
-    ...suggestedForType,
-    ...customItems.map(i => i.description),
-  ];
-
-  const handleToggleChip = async (description: string, isCustom = false, customRef: CustomWorkItem | null = null) => {
+  // Toggle chip: add to / remove from the selected work items list
+  const handleToggleChip = (description: string) => {
     const existing = workItems.find(w => w.description === description);
     if (existing) {
-      // Already selected → remove it
       removeWorkItem(existing.id);
     } else {
-      // Not selected → add it
-      const newItem: WorkItem = {
+      addWorkItem({
         id: crypto.randomUUID(),
         description: description.trim(),
         affectsCalculation: true,
         order: workItems.length,
-      };
-      addWorkItem(newItem);
+      });
     }
-    void isCustom; void customRef; // currently unused but kept for future custom handling
   };
 
+  // Remove a chip from the DB panel (does not affect the selected list state)
+  const handleDeleteChip = async (e: React.MouseEvent, chip: ChipRow) => {
+    e.stopPropagation();
+    await fetch(`/api/work-items/${chip.id}`, { method: 'DELETE' });
+    setChips(prev => prev.filter(c => c.id !== chip.id));
+    // Also deselect from the work list if it was selected
+    const inList = workItems.find(w => w.description === chip.description);
+    if (inList) removeWorkItem(inList.id);
+  };
+
+  // Add a new chip to the DB (scoped to current equipment type) and select it
   const handleAddCustom = async (description: string) => {
     if (!description.trim()) return;
-    const newItem: WorkItem = {
+    // Select it immediately
+    addWorkItem({
       id: crypto.randomUUID(),
       description: description.trim(),
       affectsCalculation: true,
       order: workItems.length,
-    };
-    addWorkItem(newItem);
+    });
     setNewItemText('');
 
-    if (!allFrequentDescriptions.includes(description.trim())) {
+    // Persist as a chip for this company + equipment type if not already in panel
+    const alreadyInPanel = chips.some(c => c.description === description.trim());
+    if (!alreadyInPanel) {
       const res = await fetch('/api/work-items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId: budget.companyId, description: description.trim() }),
+        body: JSON.stringify({ companyId, equipmentType, description: description.trim() }),
       });
       if (res.ok) {
-        const created: CustomWorkItem = await res.json();
-        setCustomItems(prev => [...prev, created]);
+        const created: ChipRow = await res.json();
+        setChips(prev => [...prev, created]);
       }
     }
   };
 
-  const handleDeleteCustomItem = async (e: React.MouseEvent, item: CustomWorkItem) => {
-    e.stopPropagation();
-    await fetch(`/api/work-items/${item.id}`, { method: 'DELETE' });
-    setCustomItems(prev => prev.filter(i => i.id !== item.id));
-    // Also remove from work list if selected
-    const existing = workItems.find(w => w.description === item.description);
-    if (existing) removeWorkItem(existing.id);
-  };
-
-  // Drag-to-reorder
+  // Drag-to-reorder the selected items list
   const handleDragStart = (index: number) => setDragIndex(index);
   const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
     if (dragIndex === null || dragIndex === index) return;
-    const newItems = [...workItems];
-    const [moved] = newItems.splice(dragIndex, 1);
-    newItems.splice(index, 0, moved);
-    reorderWorkItems(newItems.map((item, i) => ({ ...item, order: i })));
+    const next = [...workItems];
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(index, 0, moved);
+    reorderWorkItems(next.map((item, i) => ({ ...item, order: i })));
     setDragIndex(index);
   };
-
-  const allQuickItems = [
-    ...suggestedForType.map(d => ({ key: d, description: d, isCustom: false, customRef: null as CustomWorkItem | null })),
-    ...customItems.map(i => ({ key: i.id, description: i.description, isCustom: true, customRef: i })),
-  ];
 
   return (
     <Card>
@@ -128,7 +123,7 @@ export function WorkItemsSection() {
 
       <CardContent className="space-y-4">
 
-        {/* ── Chips toggleables ────────────────────────────────────────── */}
+        {/* ── Chips per equipment type ──────────────────────────────────── */}
         <div className="space-y-2">
           <div className="flex items-baseline gap-1.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -142,21 +137,20 @@ export function WorkItemsSection() {
             </span>
           </div>
 
-          {loadingCustom && customItems.length === 0 ? (
+          {loadingChips ? (
             <div className="flex items-center gap-1.5 py-2 text-xs text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" /> Cargando...
             </div>
           ) : (
             <div className="flex flex-wrap gap-1.5 max-h-52 overflow-y-auto pr-1">
-              {allQuickItems.map((item) => {
-                const isSelected = workItems.some(w => w.description === item.description);
+              {chips.map((chip) => {
+                const isSelected = workItems.some(w => w.description === chip.description);
                 return (
-                  <div key={item.key} className="flex items-center group/chip">
+                  <div key={chip.id} className="flex items-center group/chip">
                     <button
-                      onClick={() => handleToggleChip(item.description, item.isCustom, item.customRef)}
+                      onClick={() => handleToggleChip(chip.description)}
                       className={[
-                        'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border transition-all duration-150',
-                        item.isCustom ? 'rounded-l-full border-r-0' : 'rounded-full',
+                        'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-l-full border-r-0 transition-all duration-150',
                         isSelected
                           ? 'bg-primary text-primary-foreground border-primary shadow-sm hover:bg-primary/80'
                           : 'bg-background border-border text-foreground hover:border-primary/50 hover:bg-muted/60 cursor-pointer',
@@ -165,29 +159,37 @@ export function WorkItemsSection() {
                       {isSelected
                         ? <X className="h-3 w-3 shrink-0" />
                         : <Plus className="h-3 w-3 shrink-0 text-muted-foreground" />}
-                      {item.description}
+                      {chip.description}
                     </button>
-
-                    {item.isCustom && (
-                      <button
-                        onClick={(e) => handleDeleteCustomItem(e, item.customRef!)}
-                        title="Eliminar de la lista"
-                        className="inline-flex items-center px-1.5 py-1.5 rounded-r-full border border-border bg-background text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors"
-                      >
-                        <X className="h-2.5 w-2.5" />
-                      </button>
-                    )}
+                    {/* Remove chip from panel */}
+                    <button
+                      onClick={(e) => handleDeleteChip(e, chip)}
+                      title="Quitar de la lista de sugeridos"
+                      className={[
+                        'inline-flex items-center px-1.5 py-1.5 rounded-r-full border border-l-0 transition-colors',
+                        isSelected
+                          ? 'border-primary bg-primary text-white/70 hover:text-white hover:bg-primary/80'
+                          : 'border-border bg-background text-muted-foreground hover:text-destructive hover:bg-destructive/5',
+                      ].join(' ')}
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
                   </div>
                 );
               })}
+              {chips.length === 0 && !loadingChips && (
+                <p className="text-xs text-muted-foreground italic">
+                  Sin sugeridos. Agregá trabajos con el campo de abajo.
+                </p>
+              )}
             </div>
           )}
           <p className="text-[11px] text-muted-foreground">
-            Click para agregar · Click nuevamente para quitar
+            Click para agregar · Click nuevamente para quitar · ✕ derecho para eliminar de la lista
           </p>
         </div>
 
-        {/* ── Agregar trabajo personalizado ────────────────────────────── */}
+        {/* ── Agregar trabajo al panel de chips ────────────────────────── */}
         <div className="flex gap-2">
           <Input
             value={newItemText}
