@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ClipboardList, Plus, X, Loader2, GripVertical } from 'lucide-react';
-import { COMMON_WORK_ITEMS, type WorkItem } from '@/types/budget';
+import { WORK_ITEMS_BY_EQUIPMENT_TYPE, EQUIPMENT_TYPE_LABELS, type WorkItem } from '@/types/budget';
 
 interface CustomWorkItem {
   id: string;
@@ -16,8 +16,8 @@ interface CustomWorkItem {
 
 export function WorkItemsSection() {
   const { budget, addWorkItem, removeWorkItem, reorderWorkItems } = useBudget();
-  const { workItems } = budget;
-  const companyId = budget.companyId;
+  const { workItems, equipment, companyId } = budget;
+  const equipmentType = equipment.type;
   const [newItemText, setNewItemText] = useState('');
   const [customItems, setCustomItems] = useState<CustomWorkItem[]>([]);
   const [loadingCustom, setLoadingCustom] = useState(false);
@@ -26,17 +26,19 @@ export function WorkItemsSection() {
   const fetchCustomItems = useCallback(async () => {
     setLoadingCustom(true);
     try {
-      const res = await fetch(`/api/work-items?companyId=${companyId}`);
+      const res = await fetch(`/api/work-items?companyId=${budget.companyId}`);
       if (res.ok) setCustomItems(await res.json());
     } finally {
       setLoadingCustom(false);
     }
-  }, [companyId]);
+  }, [budget.companyId]);
 
   useEffect(() => { fetchCustomItems(); }, [fetchCustomItems]);
 
+  // Suggested items for the active equipment type, plus any DB-saved custom items
+  const suggestedForType = WORK_ITEMS_BY_EQUIPMENT_TYPE[equipmentType] ?? WORK_ITEMS_BY_EQUIPMENT_TYPE.otro;
   const allFrequentDescriptions = [
-    ...COMMON_WORK_ITEMS,
+    ...suggestedForType,
     ...customItems.map(i => i.description),
   ];
 
@@ -73,7 +75,7 @@ export function WorkItemsSection() {
       const res = await fetch('/api/work-items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, description: description.trim() }),
+        body: JSON.stringify({ companyId: budget.companyId, description: description.trim() }),
       });
       if (res.ok) {
         const created: CustomWorkItem = await res.json();
@@ -104,7 +106,7 @@ export function WorkItemsSection() {
   };
 
   const allQuickItems = [
-    ...COMMON_WORK_ITEMS.map(d => ({ key: d, description: d, isCustom: false, customRef: null as CustomWorkItem | null })),
+    ...suggestedForType.map(d => ({ key: d, description: d, isCustom: false, customRef: null as CustomWorkItem | null })),
     ...customItems.map(i => ({ key: i.id, description: i.description, isCustom: true, customRef: i })),
   ];
 
@@ -128,9 +130,17 @@ export function WorkItemsSection() {
 
         {/* ── Chips toggleables ────────────────────────────────────────── */}
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Seleccioná los trabajos
-          </p>
+          <div className="flex items-baseline gap-1.5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Seleccioná los trabajos
+            </p>
+            <span className="text-[11px] text-muted-foreground/70">
+              — sugeridos para{' '}
+              <span className="font-medium text-primary">
+                {EQUIPMENT_TYPE_LABELS[equipmentType]}
+              </span>
+            </span>
+          </div>
 
           {loadingCustom && customItems.length === 0 ? (
             <div className="flex items-center gap-1.5 py-2 text-xs text-muted-foreground">
