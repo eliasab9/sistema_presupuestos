@@ -15,16 +15,27 @@ export function LaborSection() {
   const [newDescription, setNewDescription] = useState('');
   const [newPrice, setNewPrice] = useState('');
   const prevWorkItemsRef = useRef<string>('');
+  const prevSectionIdxRef = useRef<number>(budget.activeSectionIdx);
 
-  // Auto-recalculate when work items change
+  // Auto-recalculate when work items change within the same section.
+  // Skip recalculation when the active section itself changes (the correct
+  // labor items are already restored from the section snapshot by the reducer).
   useEffect(() => {
     const workItemsKey = workItems.map(w => `${w.id}-${w.affectsCalculation}`).join(',');
-    
+    const sectionChanged = prevSectionIdxRef.current !== budget.activeSectionIdx;
+    prevSectionIdxRef.current = budget.activeSectionIdx;
+
+    if (sectionChanged) {
+      // Update ref so future within-section changes are correctly detected
+      prevWorkItemsRef.current = workItemsKey;
+      return;
+    }
+
     if (prevWorkItemsRef.current !== workItemsKey && workItems.length > 0) {
       prevWorkItemsRef.current = workItemsKey;
       handleGenerateSuggestions();
     }
-  }, [workItems, equipment.type, equipment.power]);
+  }, [workItems, equipment.type, equipment.power, budget.activeSectionIdx]);
 
   const handleGenerateSuggestions = () => {
     const suggestions = generateSuggestedLabor(workItems, equipment.type, equipment.power);

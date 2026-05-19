@@ -105,7 +105,7 @@ type BudgetAction =
   | { type: 'RECALCULATE_TOTALS' }
   | { type: 'SET_SUBTOTALS'; payload: { subtotalLabor: number; subtotalBearings: number; subtotalSpareParts: number; subtotalMachining: number; subtotalGeneral: number } }
   | { type: 'SET_BUDGET'; payload: Budget }
-  | { type: 'RESET' }
+  | { type: 'RESET'; payload?: CompanyId }
   // Section management
   | { type: 'ADD_SECTION' }
   | { type: 'SWITCH_SECTION'; payload: number }
@@ -343,8 +343,10 @@ function budgetReducer(state: Budget, action: BudgetAction): Budget {
       return incoming;
     }
 
-    case 'RESET':
-      return createInitialBudget();
+    case 'RESET': {
+      const fresh = createInitialBudget();
+      return action.payload ? { ...fresh, companyId: action.payload } : fresh;
+    }
 
     case 'ADD_SECTION': {
       const savedSections = syncActiveSection(state);
@@ -551,7 +553,7 @@ export function BudgetProvider({ children }: { children: ReactNode }) {
   }, [budget.companyId]);
 
   const resetBudget = useCallback(() => {
-    dispatch({ type: 'RESET' });
+    dispatch({ type: 'RESET', payload: budget.companyId });
     const today = new Date();
     dispatch({ type: 'SET_META', payload: { date: formatDate(today), validUntil: formatDate(addDays(today, 7)) } });
     refreshBudgetNumber(budget.companyId);
