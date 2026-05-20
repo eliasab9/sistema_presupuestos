@@ -18,6 +18,7 @@ export function NewEquipmentPreview() {
   const [zoom, setZoom] = useState(0.75);
   const [fitZoom, setFitZoom] = useState(0.75);
   const [docHeight, setDocHeight] = useState(DOC_HEIGHT_PX);
+  const zoomInitializedRef = useRef(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -25,7 +26,10 @@ export function NewEquipmentPreview() {
       const w = entry.contentRect.width - 24;
       const computed = Math.min(0.95, Math.max(0.2, w / DOC_WIDTH_PX));
       setFitZoom(computed);
-      setZoom(computed);
+      if (!zoomInitializedRef.current) {
+        zoomInitializedRef.current = true;
+        setZoom(computed);
+      }
     });
     ro.observe(containerRef.current);
     return () => ro.disconnect();

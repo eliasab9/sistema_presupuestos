@@ -137,15 +137,19 @@ export function BudgetPreview() {
   const [zoom, setZoom] = useState(0.5);
   const [fitZoom, setFitZoom] = useState(0.5);
   const [docHeight, setDocHeight] = useState(DOC_HEIGHT_PX);
+  const zoomInitializedRef = useRef(false);
 
-  // Auto-fit zoom to container width
+  // Auto-fit zoom to container width (only initialize zoom once)
   useEffect(() => {
     if (!containerRef.current) return;
     const ro = new ResizeObserver(([entry]) => {
       const w = entry.contentRect.width - 24;
       const computed = Math.min(0.95, Math.max(0.2, w / DOC_WIDTH_PX));
       setFitZoom(computed);
-      setZoom(computed);
+      if (!zoomInitializedRef.current) {
+        zoomInitializedRef.current = true;
+        setZoom(computed);
+      }
     });
     ro.observe(containerRef.current);
     return () => ro.disconnect();
