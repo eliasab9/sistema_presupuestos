@@ -13,15 +13,17 @@ export function NewEquipmentPreview() {
   const { budget } = useNewEquipment();
   const { meta, customer, items, subtotalItems, showTotal } = budget;
 
-  const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(0.75);
   const [fitZoom, setFitZoom] = useState(0.75);
   const [docHeight, setDocHeight] = useState(DOC_HEIGHT_PX);
   const zoomInitializedRef = useRef(false);
 
+  // Observe the panel (not the inner ScrollArea container, which uses
+  // display: table and grows to fit content — creating a feedback loop).
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!panelRef.current) return;
     const ro = new ResizeObserver(([entry]) => {
       const w = entry.contentRect.width - 24;
       const computed = Math.min(0.95, Math.max(0.2, w / DOC_WIDTH_PX));
@@ -31,7 +33,7 @@ export function NewEquipmentPreview() {
         setZoom(computed);
       }
     });
-    ro.observe(containerRef.current);
+    ro.observe(panelRef.current);
     return () => ro.disconnect();
   }, []);
 
@@ -74,7 +76,7 @@ export function NewEquipmentPreview() {
   const scaledH = Math.round(docHeight * zoom);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div ref={panelRef} className="flex flex-col h-full overflow-hidden">
       {/* Zoom controls */}
       <div className="flex items-center justify-end gap-1 px-3 py-1.5 bg-neutral-100 border-b border-neutral-300 shrink-0">
         <button
@@ -104,7 +106,7 @@ export function NewEquipmentPreview() {
       </div>
 
       <ScrollArea className="flex-1 bg-neutral-200">
-        <div ref={containerRef} className="p-3">
+        <div className="p-3">
           <div style={{ width: scaledW, height: scaledH, margin: '0 auto', overflow: 'hidden' }}>
             <div
               ref={docRef}

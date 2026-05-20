@@ -132,16 +132,17 @@ export function BudgetPreview() {
   const { budget, effectiveSections } = useBudget();
   const { meta, customer } = budget;
 
-  const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(0.5);
   const [fitZoom, setFitZoom] = useState(0.5);
   const [docHeight, setDocHeight] = useState(DOC_HEIGHT_PX);
   const zoomInitializedRef = useRef(false);
 
-  // Auto-fit zoom to container width (only initialize zoom once)
+  // Auto-fit zoom to PANEL width (not the inner ScrollArea container, which
+  // uses display: table and grows to fit the document — that creates a feedback loop).
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!panelRef.current) return;
     const ro = new ResizeObserver(([entry]) => {
       const w = entry.contentRect.width - 24;
       const computed = Math.min(0.95, Math.max(0.2, w / DOC_WIDTH_PX));
@@ -151,7 +152,7 @@ export function BudgetPreview() {
         setZoom(computed);
       }
     });
-    ro.observe(containerRef.current);
+    ro.observe(panelRef.current);
     return () => ro.disconnect();
   }, []);
 
@@ -197,7 +198,7 @@ export function BudgetPreview() {
   const scaledH = Math.round(docHeight * zoom);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div ref={panelRef} className="flex flex-col h-full overflow-hidden">
       {/* Zoom controls */}
       <div className="flex items-center justify-end gap-1 px-3 py-1.5 bg-neutral-100 border-b border-neutral-300 shrink-0">
         <button
@@ -227,7 +228,7 @@ export function BudgetPreview() {
       </div>
 
       <ScrollArea className="flex-1 bg-neutral-200">
-        <div ref={containerRef} className="p-3">
+        <div className="p-3">
           {/* Wrapper sized to visual (scaled) document dimensions — prevents layout overflow */}
           <div style={{ width: scaledW, height: scaledH, margin: '0 auto', overflow: 'hidden' }}>
             <div
