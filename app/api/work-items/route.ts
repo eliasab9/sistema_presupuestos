@@ -55,6 +55,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Deduplicate by description (guard against concurrent seeding creating duplicates)
+    const seen = new Set<string>();
+    rows = rows.filter(row => {
+      if (seen.has(row.description)) return false;
+      seen.add(row.description);
+      return true;
+    });
+
     return NextResponse.json(rows);
   } catch (error) {
     log.error('Failed to fetch work items', { error });

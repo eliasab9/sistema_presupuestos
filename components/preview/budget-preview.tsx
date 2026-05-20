@@ -1,10 +1,12 @@
 'use client';
 
+import { useState, useRef, useEffect } from 'react';
 import { useBudget } from '@/lib/budget-context';
 import { formatARS } from '@/lib/pricing/calculations';
 import { EQUIPMENT_TYPE_LABELS, COMPANIES } from '@/types/budget';
 import type { RepairSection } from '@/types/budget';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
 interface SectionTotals {
   labor: number;
@@ -137,6 +139,23 @@ export function BudgetPreview() {
   const { budget, effectiveSections } = useBudget();
   const { meta, customer } = budget;
 
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(0.5);
+  const [fitZoom, setFitZoom] = useState(0.5);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width - 24;
+      const docPx = 794; // 210mm at 96dpi
+      const computed = Math.min(0.95, Math.max(0.25, w / docPx));
+      setFitZoom(computed);
+      setZoom(computed);
+    });
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
   const company      = COMPANIES[budget.companyId];
   const primaryColor = company.primaryColor;
   const isOnly       = effectiveSections.length === 1;
@@ -168,24 +187,52 @@ export function BudgetPreview() {
   const grandTotal = perSectionTotals.reduce((sum, t) => sum + t.labor + t.bearings + t.spareParts + t.machining, 0);
 
   return (
-    <ScrollArea className="h-full bg-neutral-200">
-      <div className="p-3">
-        <div style={{ width: '100%', maxWidth: '400px', margin: '0 auto' }}>
-          <div
-            id="budget-preview"
-            data-company-id={budget.companyId}
-            style={{
-              width: '210mm',
-              minHeight: '297mm',
-              padding: '15mm 20mm',
-              backgroundColor: '#ffffff',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-              fontFamily: previewFont,
-              transform: 'scale(0.5)',
-              transformOrigin: 'top left',
-              position: 'relative',
-            }}
-          >
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Zoom controls */}
+      <div className="flex items-center justify-end gap-1 px-3 py-1.5 bg-neutral-100 border-b border-neutral-300 shrink-0">
+        <button
+          onClick={() => setZoom(z => Math.max(0.25, +(z - 0.1).toFixed(2)))}
+          className="p-1 rounded hover:bg-neutral-200 text-neutral-600 transition-colors"
+          title="Reducir zoom"
+        >
+          <ZoomOut className="h-3.5 w-3.5" />
+        </button>
+        <span className="text-[11px] text-neutral-500 tabular-nums w-10 text-center select-none">
+          {Math.round(zoom * 100)}%
+        </span>
+        <button
+          onClick={() => setZoom(z => Math.min(2, +(z + 0.1).toFixed(2)))}
+          className="p-1 rounded hover:bg-neutral-200 text-neutral-600 transition-colors"
+          title="Aumentar zoom"
+        >
+          <ZoomIn className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={() => setZoom(fitZoom)}
+          className="p-1 rounded hover:bg-neutral-200 text-neutral-500 transition-colors"
+          title="Ajustar a ventana"
+        >
+          <Maximize2 className="h-3 w-3" />
+        </button>
+      </div>
+
+      <ScrollArea className="flex-1 bg-neutral-200">
+        <div ref={containerRef} className="p-3">
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <div
+              id="budget-preview"
+              data-company-id={budget.companyId}
+              style={{
+                zoom,
+                width: '210mm',
+                minHeight: '297mm',
+                padding: '15mm 20mm',
+                backgroundColor: '#ffffff',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+                fontFamily: previewFont,
+                position: 'relative',
+              }}
+            >
             {/* Header */}
             <header style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
@@ -321,9 +368,10 @@ export function BudgetPreview() {
               </p>
               <p style={{ fontSize: '8px', marginTop: '2px' }}>N° {meta.number} · {meta.date}</p>
             </footer>
+            </div>
           </div>
         </div>
-      </div>
-    </ScrollArea>
+      </ScrollArea>
+    </div>
   );
 }
