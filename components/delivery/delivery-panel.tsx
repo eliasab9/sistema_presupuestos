@@ -32,6 +32,7 @@ import {
 import { useBudget } from '@/lib/budget-context';
 import { COMPANIES } from '@/types/budget';
 import { saveBudget } from '@/lib/storage/budgets';
+import { syncSentBudgetToDb } from '@/lib/storage/budgets-api';
 import { WorkflowProgress } from './workflow-progress';
 import { ConfirmSendModal } from './confirm-send-modal';
 import { toast as showToast } from 'sonner';
@@ -180,15 +181,27 @@ export function DeliveryPanel() {
 
     if (pendingAction === 'full' && result.success) {
       // Archive sent budget as "pending" and clear form for next budget
+      const sentAt = new Date().toISOString();
       try {
         saveBudget({
           ...budget,
           status: 'pending',
-          sentAt: new Date().toISOString(),
+          sentAt,
         });
       } catch (e) {
         console.error('Failed to archive sent budget:', e);
       }
+      // Persist to DB so the budget is accessible from any device, including
+      // the Drive link so the file can be reopened from the history page.
+      syncSentBudgetToDb(budget, {
+        budgetType: 'reparacion',
+        status: 'pending',
+        sentAt,
+        driveFileId: result.steps.drive.fileId,
+        driveWebViewLink: result.steps.drive.webViewLink,
+        fileName: effective.fileName,
+        fileFormat: effective.fileFormat,
+      }).catch((e) => console.error('Failed to sync sent budget to DB:', e));
       showToast.success('Presupuesto enviado y archivado como pendiente');
       // Slight delay so the user sees the success state before the form clears
       setTimeout(() => {

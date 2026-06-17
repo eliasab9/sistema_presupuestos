@@ -16,6 +16,8 @@ import {
   ClipboardList,
   TrendingUp,
   Inbox,
+  FileText,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -23,6 +25,12 @@ import {
   setBudgetStatus,
   deleteBudget,
 } from '@/lib/storage/budgets';
+import {
+  fetchSentBudgets,
+  updateBudgetStatusInDb,
+  deleteBudgetFromDb,
+  type SentBudgetDTO,
+} from '@/lib/storage/budgets-api';
 import type { Budget, BudgetStatus, Company } from '@/types/budget';
 import { COMPANIES } from '@/types/budget';
 
@@ -55,16 +63,40 @@ function formatARS(n: number): string {
   }).format(n);
 }
 
+// Local view-model used by this page: union of localStorage Budget and the
+// DB DTO that carries Drive file metadata. The fields the UI reads
+// (meta.number, customer.name, totalFinal, status, sentAt) exist on both.
+type SentBudget = (Budget | SentBudgetDTO) & {
+  driveFileId?: string | null;
+  driveWebViewLink?: string | null;
+  fileName?: string | null;
+  fileFormat?: 'pdf' | 'docx' | null;
+};
+
 export function BudgetHistoryPage({ company, onBack }: BudgetHistoryPageProps) {
-  const [allBudgets, setAllBudgets] = useState<Budget[]>([]);
+  const [allBudgets, setAllBudgets] = useState<SentBudget[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [clientSearch, setClientSearch] = useState('');
-  const [budgetToDelete, setBudgetToDelete] = useState<Budget | null>(null);
+  const [budgetToDelete, setBudgetToDelete] = useState<SentBudget | null>(null);
 
-  const refresh = useCallback(() => {
-    const sent = getAllBudgets().filter((b) => !!b.status && b.companyId === company.id);
-    setAllBudgets(sent);
+  const refresh = useCallback(async () => {
+    // localStorage cache for instant render / offline fallback
+    const local = getAllBudgets().filter((b) => !!b.status && b.companyId === company.id);
+    setAllBudgets(local);
+    // DB is the source of truth across devices
+    try {
+      const remote = await fetchSentBudgets(company.id);
+      // Merge: prefer remote rows; keep local rows that are not yet in DB.
+      const remoteIds = new Set(remote.map((b) => b.id));
+      const merged: SentBudget[] = [
+        ...remote,
+        ...local.filter((b) => !remoteIds.has(b.id)),
+      ];
+      setAllBudgets(merged);
+    } catch (e) {
+      console.warn('Could not load budgets from DB, using localStorage only:', e);
+    }
   }, [company.id]);
 
   useEffect(() => {
@@ -101,23 +133,40 @@ export function BudgetHistoryPage({ company, onBack }: BudgetHistoryPageProps) {
   const approvalRate = total > 0 ? Math.round((approved / total) * 100) : 0;
   const totalValue = filtered.reduce((sum, b) => sum + (b.totalFinal ?? 0), 0);
 
-  const handleToggleStatus = (b: Budget) => {
+  const handleToggleStatus = (b: SentBudget) => {
     const next: BudgetStatus = b.status === 'approved' ? 'pending' : 'approved';
     setBudgetStatus(b.id, next);
+    updateBudgetStatusInDb(b.id, next).catch((e) =>
+      console.error('Failed to update status in DB:', e)
+    );
     refresh();
     toast.success(next === 'approved' ? 'Marcado como aprobado ✓' : 'Vuelto a pendiente');
   };
 
-  const handleDelete = (b: Budget) => {
+  const handleDelete = (b: SentBudget) => {
     setBudgetToDelete(b);
   };
 
   const handleConfirmDelete = () => {
     if (!budgetToDelete) return;
     deleteBudget(budgetToDelete.id);
+    deleteBudgetFromDb(budgetToDelete.id).catch((e) =>
+      console.error('Failed to delete budget from DB:', e)
+    );
     setBudgetToDelete(null);
     refresh();
     toast.success('Eliminado del historial');
+  };
+
+  const handleOpenFile = (b: SentBudget) => {
+    if (b.driveWebViewLink) {
+      window.open(b.driveWebViewLink, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    toast.info('Este presupuesto no tiene archivo guardado en Drive.', {
+      description:
+        'Sólo los presupuestos enviados desde esta versión con guardado en Drive incluyen el archivo.',
+    });
   };
 
   const STATUS_FILTERS: { value: StatusFilter; label: string; count: number }[] = [
@@ -278,10 +327,29 @@ export function BudgetHistoryPage({ company, onBack }: BudgetHistoryPageProps) {
             {filtered.map((b) => {
               const isApproved = b.status === 'approved';
               const co = COMPANIES[b.companyId];
+              const hasFile = !!b.driveWebViewLink;
               return (
                 <div
                   key={b.id}
-                  className="bg-white rounded-2xl border shadow-sm hover:shadow-md transition-shadow"
+                  role={hasFile ? 'button' : undefined}
+                  tabIndex={hasFile ? 0 : undefined}
+                  onClick={hasFile ? () => handleOpenFile(b) : undefined}
+                  onKeyDown={
+                    hasFile
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleOpenFile(b);
+                          }
+                        }
+                      : undefined
+                  }
+                  title={hasFile ? 'Abrir archivo enviado en Google Drive' : undefined}
+                  className={`bg-white rounded-2xl border shadow-sm transition-all ${
+                    hasFile
+                      ? 'cursor-pointer hover:shadow-md hover:border-slate-300'
+                      : 'hover:shadow-md'
+                  }`}
                 >
                   <div className="flex items-center gap-4 p-4">
                     {/* Status accent */}
@@ -315,6 +383,15 @@ export function BudgetHistoryPage({ company, onBack }: BudgetHistoryPageProps) {
                           )}
                           {isApproved ? 'Aprobado' : 'Pendiente'}
                         </span>
+                        {hasFile && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600"
+                            title="Archivo disponible en Drive"
+                          >
+                            <FileText className="h-3 w-3" />
+                            {(b.fileFormat ?? 'pdf').toUpperCase()}
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-slate-700 font-medium truncate">
                         {b.customer.name || <span className="text-muted-foreground italic">Sin cliente</span>}
@@ -327,7 +404,21 @@ export function BudgetHistoryPage({ company, onBack }: BudgetHistoryPageProps) {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div
+                      className="flex items-center gap-1 shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {hasFile && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                          onClick={() => handleOpenFile(b)}
+                          title="Abrir archivo en Drive"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"

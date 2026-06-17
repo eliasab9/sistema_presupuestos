@@ -128,6 +128,13 @@ export const budgets = pgTable('budgets', {
   // shared
   taxes:       jsonb('taxes').notNull().default([]),  // TaxLine[]
 
+  // ── Sent file metadata (Google Drive) ─────────────────────────────────────
+  // Set after a successful delivery so the file can be reopened from any device.
+  driveFileId:      text('drive_file_id'),       // Google Drive file ID
+  driveWebViewLink: text('drive_web_view_link'), // Shareable Drive URL
+  fileName:         text('file_name'),           // Name used at send time
+  fileFormat:       text('file_format'),         // 'pdf' | 'docx'
+
   // ── Timestamps ────────────────────────────────────────────────────────────
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
