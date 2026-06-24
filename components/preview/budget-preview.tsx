@@ -19,11 +19,12 @@ interface SectionTotals {
 }
 
 // ─── Per-section economic breakdown (client-facing) ───────────────────────────
-function SectionBreakdown({ section, sectionTotals, primaryColor, isOnly }: {
+function SectionBreakdown({ section, sectionTotals, primaryColor, isOnly, formatTotal }: {
   section: RepairSection;
   sectionTotals: SectionTotals;
   primaryColor: string;
   isOnly: boolean;
+  formatTotal: (amount: number) => string;
 }) {
   const { equipment, workItems, labor, bearings, spareParts, machining } = section;
 
@@ -108,7 +109,7 @@ function SectionBreakdown({ section, sectionTotals, primaryColor, isOnly }: {
                   {allDescLines.length > 0 ? allDescLines.join(' · ') : 'Trabajos de reparación y materiales'}
                 </td>
                 <td style={{ padding: '3px 0', textAlign: 'right', fontWeight: 500, color: '#333', width: '100px', verticalAlign: 'top' }}>
-                  {formatARS(sectionTotal)}
+                  {formatTotal(sectionTotal)}
                 </td>
               </tr>
             </tbody>
@@ -118,7 +119,7 @@ function SectionBreakdown({ section, sectionTotals, primaryColor, isOnly }: {
               {isOnly ? 'SUBTOTAL' : `Subtotal ${section.label}`}
             </span>
             <span style={{ fontSize: '12px', fontWeight: 700, color: primaryColor }}>
-              {formatARS(sectionTotal)}
+              {formatTotal(sectionTotal)}
             </span>
           </div>
         </section>
@@ -192,6 +193,11 @@ export function BudgetPreview() {
   });
 
   const grandTotal = perSectionTotals.reduce((sum, t) => sum + t.labor + t.bearings + t.spareParts + t.machining, 0);
+
+  const formatTotal = (amount: number) =>
+    meta.currency === 'USD' && meta.exchangeRate > 0
+      ? formatUSD(amount / meta.exchangeRate)
+      : formatARS(amount);
 
   // Visual dimensions after scaling
   const scaledW = Math.round(DOC_WIDTH_PX * zoom);
@@ -337,6 +343,7 @@ export function BudgetPreview() {
                     sectionTotals={perSectionTotals[idx]}
                     primaryColor={primaryColor}
                     isOnly={isOnly}
+                    formatTotal={formatTotal}
                   />
                 </div>
               ))}
@@ -349,9 +356,7 @@ export function BudgetPreview() {
                 }}>
                   <span style={{ fontWeight: 700, color: '#333', fontSize: '13px' }}>TOTAL GENERAL</span>
                   <span style={{ fontSize: '18px', fontWeight: 700, color: primaryColor }}>
-                    {meta.currency === 'USD' && meta.exchangeRate > 0
-                      ? formatUSD(grandTotal / meta.exchangeRate)
-                      : formatARS(grandTotal)}
+                    {formatTotal(grandTotal)}
                   </span>
                 </div>
               )}
