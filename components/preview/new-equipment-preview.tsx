@@ -229,7 +229,11 @@ export function NewEquipmentPreview() {
                 <section style={{ borderTop: `3px solid ${primaryColor}`, paddingTop: '10px', marginBottom: '15px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px', fontWeight: 'bold' }}>
                     <span>SUBTOTAL</span>
-                    <span style={{ color: primaryColor }}>{formatCurrency(subtotalItems)}</span>
+                    <span style={{ color: primaryColor }}>
+                      {meta.currency === 'USD' && meta.exchangeRate > 0
+                        ? `U$S ${(subtotalItems / meta.exchangeRate).toFixed(2)}`
+                        : formatCurrency(subtotalItems)}
+                    </span>
                   </div>
                 </section>
               )}

@@ -609,9 +609,42 @@ export function NewEquipmentForm() {
                 <span className="text-sm text-muted-foreground">Mostrar total en el presupuesto</span>
               </label>
               {showTotal && (
-                <span className="text-lg font-bold">{formatCurrency(subtotalItems)}</span>
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex rounded-md border bg-white overflow-hidden text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setMeta({ currency: 'ARS' })}
+                      className={`px-2 py-1 transition-colors ${
+                        (meta.currency ?? 'ARS') === 'ARS'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-muted'
+                      }`}
+                    >
+                      ARS
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMeta({ currency: 'USD' })}
+                      className={`px-2 py-1 transition-colors ${
+                        meta.currency === 'USD'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-muted'
+                      }`}
+                    >
+                      USD
+                    </button>
+                  </div>
+                  <span className="text-lg font-bold">
+                    {meta.currency === 'USD' && meta.exchangeRate > 0
+                      ? `U$S ${(subtotalItems / meta.exchangeRate).toFixed(2)}`
+                      : formatCurrency(subtotalItems)}
+                  </span>
+                </div>
               )}
             </div>
+            {showTotal && meta.currency === 'USD' && meta.exchangeRate <= 0 && (
+              <p className="text-xs text-destructive">Ingresá un TC válido para ver el total en USD.</p>
+            )}
           </div>
         </section>
 

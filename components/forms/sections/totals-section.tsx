@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Calculator, DollarSign } from 'lucide-react';
-import { formatARS } from '@/lib/pricing/calculations';
+import { formatARS, formatUSD } from '@/lib/pricing/calculations';
 
 export function TotalsSection() {
   const { budget, setMeta } = useBudget();
@@ -72,10 +72,43 @@ export function TotalsSection() {
           </div>
 
           <div className="border-t pt-2 mt-2">
-            <div className="flex justify-between py-1">
+            <div className="flex justify-between items-center py-1">
               <span className="font-semibold">SUBTOTAL</span>
-              <span className="font-bold text-lg">{formatARS(subtotalGeneral)}</span>
+              <div className="flex items-center gap-2">
+                <div className="inline-flex rounded-md border bg-background overflow-hidden text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setMeta({ currency: 'ARS' })}
+                    className={`px-2 py-1 transition-colors ${
+                      (meta.currency ?? 'ARS') === 'ARS'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    ARS
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMeta({ currency: 'USD' })}
+                    className={`px-2 py-1 transition-colors ${
+                      meta.currency === 'USD'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    USD
+                  </button>
+                </div>
+                <span className="font-bold text-lg">
+                  {meta.currency === 'USD' && meta.exchangeRate > 0
+                    ? formatUSD(subtotalGeneral / meta.exchangeRate)
+                    : formatARS(subtotalGeneral)}
+                </span>
+              </div>
             </div>
+            {meta.currency === 'USD' && meta.exchangeRate <= 0 && (
+              <p className="text-xs text-destructive mt-1">Ingresá un TC válido para ver el total en USD.</p>
+            )}
           </div>
         </div>
 

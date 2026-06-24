@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useBudget } from '@/lib/budget-context';
-import { formatARS } from '@/lib/pricing/calculations';
+import { formatARS, formatUSD } from '@/lib/pricing/calculations';
 import { EQUIPMENT_TYPE_LABELS, COMPANIES } from '@/types/budget';
 import type { RepairSection } from '@/types/budget';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -349,7 +349,9 @@ export function BudgetPreview() {
                 }}>
                   <span style={{ fontWeight: 700, color: '#333', fontSize: '13px' }}>TOTAL GENERAL</span>
                   <span style={{ fontSize: '18px', fontWeight: 700, color: primaryColor }}>
-                    {formatARS(grandTotal)}
+                    {meta.currency === 'USD' && meta.exchangeRate > 0
+                      ? formatUSD(grandTotal / meta.exchangeRate)
+                      : formatARS(grandTotal)}
                   </span>
                 </div>
               )}
