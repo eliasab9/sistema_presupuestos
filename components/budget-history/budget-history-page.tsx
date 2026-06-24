@@ -18,6 +18,7 @@ import {
   Inbox,
   FileText,
   ExternalLink,
+  Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -40,6 +41,8 @@ type SortOrder = 'newest' | 'oldest';
 interface BudgetHistoryPageProps {
   company: Company;
   onBack: () => void;
+  /** Open this budget in the editor for re-pricing / modifying. */
+  onEditBudget?: (budgetId: string, budgetType: 'reparacion' | 'equipo_nuevo') => void;
 }
 
 function formatDate(iso?: string): string {
@@ -71,9 +74,10 @@ type SentBudget = (Budget | SentBudgetDTO) & {
   driveWebViewLink?: string | null;
   fileName?: string | null;
   fileFormat?: 'pdf' | 'docx' | null;
+  budgetType?: 'reparacion' | 'equipo_nuevo';
 };
 
-export function BudgetHistoryPage({ company, onBack }: BudgetHistoryPageProps) {
+export function BudgetHistoryPage({ company, onBack, onEditBudget }: BudgetHistoryPageProps) {
   const [allBudgets, setAllBudgets] = useState<SentBudget[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
@@ -417,6 +421,18 @@ export function BudgetHistoryPage({ company, onBack }: BudgetHistoryPageProps) {
                           title="Abrir archivo en Drive"
                         >
                           <ExternalLink className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {onEditBudget && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2.5 text-xs rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                          onClick={() => onEditBudget(b.id, b.budgetType ?? 'reparacion')}
+                          title="Editar presupuesto y volver a enviarlo"
+                        >
+                          <Pencil className="h-3.5 w-3.5 mr-1" />
+                          Editar
                         </Button>
                       )}
                       <Button

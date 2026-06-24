@@ -27,18 +27,121 @@ import {
 import { toast } from 'sonner';
 import { exportToPDF, exportToDOCX, exportToPDFBlob, exportNewEquipmentToPDF } from '@/lib/document/export-pdf';
 import { registerNewEquipmentBudgetInSheets, registerRepairBudgetInSheets } from '@/lib/delivery/sheets-service';
-import { clearDraft } from '@/lib/storage/budgets';
+import { clearDraft, getBudgetById } from '@/lib/storage/budgets';
+import { fetchBudgetById } from '@/lib/storage/budgets-api';
 import { GoogleDriveUploadButton } from '@/components/ui/google-drive-upload-button';
 import { BudgetHistoryPage } from '@/components/budget-history/budget-history-page';
 import { CompanySelector } from '@/components/wizard/company-selector';
 import { BudgetTypeSelector } from '@/components/wizard/budget-type-selector';
 import { useAppNavigation } from '@/hooks/use-app-navigation';
 import { COMPANIES } from '@/types/budget';
+import type { Budget, NewEquipmentBudget, RepairSection, Equipment } from '@/types/budget';
 import {
   Sheet,
   SheetContent,
   SheetTrigger,
 } from '@/components/ui/sheet';
+
+// ── Rehydration helpers ──────────────────────────────────────────────────────
+// Turn a stored budget (DB row or localStorage Budget) into the shape the
+// BudgetContext reducer expects when calling loadBudget: flat fields
+// (equipment/workItems/...) populated from allSections[activeSectionIdx].
+
+const DEFAULT_EQUIPMENT: Equipment = { type: 'electrobomba_centrifuga', power: 1, quantity: 1 };
+
+function expandActiveSection(b: Budget): Budget {
+  const sections = (b.allSections && b.allSections.length > 0) ? b.allSections : [];
+  const activeIdx = Math.min(
+    Math.max(0, b.activeSectionIdx ?? 0),
+    Math.max(0, sections.length - 1)
+  );
+  const active: RepairSection | undefined = sections[activeIdx];
+  return {
+    ...b,
+    equipment:  active?.equipment  ?? b.equipment  ?? { ...DEFAULT_EQUIPMENT },
+    workItems:  active?.workItems  ?? b.workItems  ?? [],
+    bearings:   active?.bearings   ?? b.bearings   ?? [],
+    spareParts: active?.spareParts ?? b.spareParts ?? [],
+    machining:  active?.machining  ?? b.machining  ?? [],
+    labor:      active?.labor      ?? b.labor      ?? [],
+    activeSectionIdx: activeIdx,
+    allSections: sections,
+  };
+}
+
+function rehydrateRepairBudgetFromRow(row: Record<string, unknown>): Budget {
+  // Drizzle returns camelCase. Build a Budget shape from columns + JSONB.
+  const stub: Budget = {
+    id: row.id as string,
+    companyId: row.companyId as Budget['companyId'],
+    meta: {
+      number: row.number as string,
+      date: row.date as string,
+      validUntil: row.validUntil as string,
+      exchangeRate: Number(row.exchangeRate ?? 0),
+      currency: (row.currency as Budget['meta']['currency']) ?? 'ARS',
+      paymentTerms: (row.paymentTerms as string) ?? undefined,
+      commercialValidity: (row.commercialValidity as string) ?? undefined,
+      generalNotes: (row.generalNotes as string) ?? undefined,
+      ivaCondition: (row.ivaCondition as string) ?? undefined,
+      pideNumber: (row.pideNumber as string) ?? undefined,
+      responsable: (row.responsable as string) ?? undefined,
+      sellerId: (row.sellerId as string) ?? undefined,
+    },
+    customer: ((row.customerSnapshot as Budget['customer']) ?? {}),
+    equipment: { ...DEFAULT_EQUIPMENT },
+    workItems: [],
+    bearings: [],
+    spareParts: [],
+    machining: [],
+    labor: [],
+    allSections: (row.allSections as Budget['allSections']) ?? [],
+    activeSectionIdx: 0,
+    taxes: (row.taxes as Budget['taxes']) ?? [],
+    subtotalLabor: Number(row.subtotalLabor ?? 0),
+    subtotalBearings: Number(row.subtotalBearings ?? 0),
+    subtotalSpareParts: Number(row.subtotalSpareParts ?? 0),
+    subtotalMachining: Number(row.subtotalMachining ?? 0),
+    subtotalGeneral: Number(row.subtotalGeneral ?? 0),
+    totalTax: Number(row.totalTax ?? 0),
+    totalFinal: Number(row.totalFinal ?? 0),
+    status: (row.status as Budget['status']) ?? undefined,
+    sentAt: typeof row.sentAt === 'string' ? row.sentAt : (row.sentAt instanceof Date ? row.sentAt.toISOString() : undefined),
+    createdAt: typeof row.createdAt === 'string' ? row.createdAt : new Date().toISOString(),
+    updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : new Date().toISOString(),
+  };
+  return expandActiveSection(stub);
+}
+
+function rehydrateNewEquipmentBudgetFromRow(row: Record<string, unknown>): NewEquipmentBudget {
+  return {
+    id: row.id as string,
+    companyId: row.companyId as NewEquipmentBudget['companyId'],
+    meta: {
+      number: row.number as string,
+      date: row.date as string,
+      validUntil: row.validUntil as string,
+      exchangeRate: Number(row.exchangeRate ?? 0),
+      currency: (row.currency as NewEquipmentBudget['meta']['currency']) ?? 'ARS',
+      paymentTerms: (row.paymentTerms as string) ?? undefined,
+      commercialValidity: (row.commercialValidity as string) ?? undefined,
+      generalNotes: (row.generalNotes as string) ?? undefined,
+      ivaCondition: (row.ivaCondition as string) ?? undefined,
+      pideNumber: (row.pideNumber as string) ?? undefined,
+      responsable: (row.responsable as string) ?? undefined,
+      sellerId: (row.sellerId as string) ?? undefined,
+    },
+    customer: ((row.customerSnapshot as NewEquipmentBudget['customer']) ?? {}),
+    items: (row.items as NewEquipmentBudget['items']) ?? [],
+    subtotalItems: Number(row.subtotalItems ?? 0),
+    taxes: (row.taxes as NewEquipmentBudget['taxes']) ?? [],
+    totalTax: Number(row.totalTax ?? 0),
+    totalFinal: Number(row.totalFinal ?? 0),
+    showTotal: true,
+    createdAt: typeof row.createdAt === 'string' ? row.createdAt : new Date().toISOString(),
+    updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : new Date().toISOString(),
+  };
+}
 
 function BudgetApp() {
   const { budget, resetBudget, refreshBudgetNumber, loadBudget, setCompany } = useBudget();
@@ -47,7 +150,9 @@ function BudgetApp() {
     currentView,
     setCurrentView,
     budgetType,
+    setBudgetType,
     selectedCompanyId,
+    setSelectedCompanyId,
     handleSelectCompany,
     handleSelectBudgetType,
     handleSelectCustomer,
@@ -86,6 +191,57 @@ function BudgetApp() {
 
   const handleClear = () => {
     setPendingAction('clear');
+  };
+
+  // Load a previously sent budget back into the editor for re-pricing / edits.
+  // Tries the DB first (works across devices), falls back to localStorage for
+  // legacy budgets that were sent before the DB-backed history existed.
+  // The original budget id is preserved so the re-send upserts the same row.
+  const handleEditBudget = async (
+    budgetId: string,
+    type: 'reparacion' | 'equipo_nuevo'
+  ) => {
+    try {
+      let row: Record<string, unknown> | null = null;
+      try {
+        row = await fetchBudgetById(budgetId);
+      } catch (e) {
+        console.warn('fetchBudgetById failed, will try localStorage:', e);
+      }
+
+      if (type === 'reparacion') {
+        const hydrated = row
+          ? rehydrateRepairBudgetFromRow(row)
+          : getBudgetById(budgetId)
+          ? expandActiveSection(getBudgetById(budgetId)!)
+          : null;
+        if (!hydrated) {
+          toast.error('No se encontraron los datos para editar este presupuesto');
+          return;
+        }
+        setSelectedCompanyId(hydrated.companyId);
+        setBudgetType('reparacion');
+        loadBudget(hydrated);
+        setCurrentView('budget');
+        toast.success('Presupuesto cargado para editar');
+      } else {
+        if (!row) {
+          toast.error(
+            'Este presupuesto de equipo nuevo no está disponible para editar (no se encuentra en la DB).'
+          );
+          return;
+        }
+        const hydrated = rehydrateNewEquipmentBudgetFromRow(row);
+        setSelectedCompanyId(hydrated.companyId);
+        setBudgetType('equipo_nuevo');
+        newEquipmentContext.loadBudget(hydrated);
+        setCurrentView('new-equipment');
+        toast.success('Presupuesto cargado para editar');
+      }
+    } catch (e) {
+      console.error('handleEditBudget failed:', e);
+      toast.error('No se pudo cargar el presupuesto para editar');
+    }
   };
 
   const handleConfirmPendingAction = () => {
@@ -389,6 +545,7 @@ function BudgetApp() {
       <BudgetHistoryPage
         company={COMPANIES[selectedCompanyId]}
         onBack={() => setCurrentView('budget-type')}
+        onEditBudget={handleEditBudget}
       />
     );
   }

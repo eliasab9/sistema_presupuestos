@@ -32,6 +32,7 @@ import { getDefaultDeliverySettings, createInitialWorkflowState } from '@/types/
 import { exportNewEquipmentToPDFBlob } from '@/lib/document/export-pdf';
 import { runDeliveryWorkflow } from '@/lib/delivery/workflow';
 import { registerNewEquipmentBudgetInSheets } from '@/lib/delivery/sheets-service';
+import { syncSentBudgetToDb } from '@/lib/storage/budgets-api';
 import type { NewEquipmentBudget } from '@/types/budget';
 
 // Build file name for new equipment budget
@@ -161,6 +162,21 @@ export function NewEquipmentDeliveryPanel() {
     );
 
     setWorkflowResult(result);
+
+    // Persist to DB so the budget is accessible from any device and can be
+    // edited later from the history page (mirrors the reparación flow).
+    if (result.success) {
+      const sentAt = new Date().toISOString();
+      syncSentBudgetToDb(budget, {
+        budgetType: 'equipo_nuevo',
+        status: 'pending',
+        sentAt,
+        driveFileId: result.steps.drive.fileId,
+        driveWebViewLink: result.steps.drive.webViewLink,
+        fileName: settings.fileName,
+        fileFormat: settings.fileFormat,
+      }).catch((e) => console.error('Failed to sync sent equipo_nuevo budget to DB:', e));
+    }
 
     // Refresh number for next budget
     if (result.steps.generate.success) refreshBudgetNumber();

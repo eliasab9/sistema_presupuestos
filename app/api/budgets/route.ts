@@ -125,6 +125,8 @@ function rowToClientBudget(r: typeof budgets.$inferSelect): Partial<Budget> & {
   fileName: string | null;
   fileFormat: string | null;
   budgetType: string;
+  items: unknown[];
+  subtotalItems: number;
 } {
   return {
     id: r.id,
@@ -145,6 +147,10 @@ function rowToClientBudget(r: typeof budgets.$inferSelect): Partial<Budget> & {
     },
     customer: (r.customerSnapshot as Budget['customer']) ?? {},
     allSections: (r.allSections as Budget['allSections']) ?? [],
+    // equipo_nuevo data — included so the history page can "Edit" and re-hydrate
+    // a NewEquipmentBudget without an extra round-trip.
+    items: (r.items as unknown[]) ?? [],
+    subtotalItems: Number(r.subtotalItems ?? 0),
     taxes: (r.taxes as Budget['taxes']) ?? [],
     subtotalLabor: Number(r.subtotalLabor ?? 0),
     subtotalBearings: Number(r.subtotalBearings ?? 0),

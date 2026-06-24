@@ -21,6 +21,18 @@ export async function fetchSentBudgets(companyId: CompanyId): Promise<SentBudget
   return res.json();
 }
 
+/**
+ * Fetch a single budget by id. Returns the raw DB row (snake_case column names
+ * mapped by Drizzle to camelCase), which carries everything needed to rehydrate
+ * either a reparación or equipo_nuevo budget for editing.
+ */
+export async function fetchBudgetById(id: string): Promise<Record<string, unknown> | null> {
+  const res = await fetch(`/api/budgets/${encodeURIComponent(id)}`, { cache: 'no-store' });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`fetchBudgetById ${res.status}`);
+  return res.json();
+}
+
 interface SyncOptions {
   budgetType: 'reparacion' | 'equipo_nuevo';
   status?: BudgetStatus;

@@ -19,7 +19,9 @@ export interface AppNavigation {
   currentView: AppView;
   setCurrentView: (view: AppView) => void;
   budgetType: BudgetType;
+  setBudgetType: (type: BudgetType) => void;
   selectedCompanyId: CompanyId;
+  setSelectedCompanyId: (id: CompanyId) => void;
   handleSelectCompany: (companyId: CompanyId) => void;
   handleSelectBudgetType: (type: BudgetType) => void;
   handleSelectCustomer: (customer: Customer) => void;
@@ -88,7 +90,9 @@ export function useAppNavigation(): AppNavigation {
     currentView,
     setCurrentView,
     budgetType,
+    setBudgetType,
     selectedCompanyId,
+    setSelectedCompanyId,
     handleSelectCompany,
     handleSelectBudgetType,
     handleSelectCustomer,
