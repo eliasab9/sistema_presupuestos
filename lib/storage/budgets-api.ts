@@ -2,7 +2,7 @@
 // localStorage helpers in `./budgets.ts`: localStorage is the local cache, the
 // API is the source of truth shared across devices.
 
-import type { Budget, BudgetStatus, CompanyId } from '@/types/budget';
+import type { Budget, BudgetStatus, CompanyId, NewEquipmentBudget } from '@/types/budget';
 
 /** Shape returned by GET /api/budgets — Budget plus Drive file metadata. */
 export type SentBudgetDTO = Budget & {
@@ -48,7 +48,7 @@ interface SyncOptions {
  * await but the UI should not block on this.
  */
 export async function syncSentBudgetToDb(
-  budget: Budget | Record<string, unknown>,
+  budget: Budget | NewEquipmentBudget | Record<string, unknown>,
   opts: SyncOptions
 ): Promise<void> {
   const payload = {
