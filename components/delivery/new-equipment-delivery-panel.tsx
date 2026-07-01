@@ -34,6 +34,8 @@ import { runDeliveryWorkflow } from '@/lib/delivery/workflow';
 import { registerNewEquipmentBudgetInSheets } from '@/lib/delivery/sheets-service';
 import { syncSentBudgetToDb } from '@/lib/storage/budgets-api';
 import type { NewEquipmentBudget } from '@/types/budget';
+import { ConfirmSendModal } from './confirm-send-modal';
+import { NewEquipmentPreview } from '@/components/preview/new-equipment-preview';
 
 // Build file name for new equipment budget
 function buildNewEquipmentFileName(budget: NewEquipmentBudget): string {
@@ -93,6 +95,7 @@ export function NewEquipmentDeliveryPanel() {
   const [workflowState, setWorkflowState] = useState<DeliveryWorkflowState>(() => createInitialWorkflowState());
   const [workflowResult, setWorkflowResult] = useState<DeliveryWorkflowResult | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [pendingAction, setPendingAction] = useState<null | 'full' | 'drive' | 'email'>(null);
 
   // Signature editor state
   const [sigText, setSigText] = useState(budget.meta.sellerSignature ?? '');
@@ -146,25 +149,27 @@ export function NewEquipmentDeliveryPanel() {
     return errors.length === 0;
   }, [settings]);
 
-  const runWorkflow = async () => {
+  // Build effective settings for a given action (used by modal preview + execute)
+  const settingsForAction = useCallback((action: 'full' | 'drive' | 'email'): DeliverySettings => {
+    if (action === 'drive') return { ...settings, saveToDrive: true, sendEmail: false };
+    if (action === 'email') return { ...settings, saveToDrive: false, sendEmail: true };
+    return settings;
+  }, [settings]);
+
+  const openPreview = () => {
     if (!validate()) return;
+    setPendingAction('full');
+  };
+
+  const handleConfirmSend = async () => {
+    if (!pendingAction) return;
+    const effective = settingsForAction(pendingAction);
+    setPendingAction(null);
 
     setWorkflowResult(null);
 
-    const result = await runDeliveryWorkflow(
-      budget,
-      settings,
-      (newState) => setWorkflowState(newState),
-      {
-        generateFile: () => exportNewEquipmentToPDFBlob(budget),
-        registerInSheets: () => registerNewEquipmentBudgetInSheets(budget),
-      }
-    );
-
+    const result = await runDeliveryWorkflowInternal(effective);
     setWorkflowResult(result);
-
-    // Persist to DB so the budget is accessible from any device and can be
-    // edited later from the history page (mirrors the reparación flow).
     if (result.success) {
       const sentAt = new Date().toISOString();
       syncSentBudgetToDb(budget, {
@@ -173,13 +178,23 @@ export function NewEquipmentDeliveryPanel() {
         sentAt,
         driveFileId: result.steps.drive.fileId,
         driveWebViewLink: result.steps.drive.webViewLink,
-        fileName: settings.fileName,
-        fileFormat: settings.fileFormat,
+        fileName: effective.fileName,
+        fileFormat: effective.fileFormat,
       }).catch((e) => console.error('Failed to sync sent equipo_nuevo budget to DB:', e));
     }
-
-    // Refresh number for next budget
     if (result.steps.generate.success) refreshBudgetNumber();
+  };
+
+  const runDeliveryWorkflowInternal = async (effective: DeliverySettings) => {
+    return runDeliveryWorkflow(
+      budget,
+      effective,
+      (newState) => setWorkflowState(newState),
+      {
+        generateFile: () => exportNewEquipmentToPDFBlob(budget),
+        registerInSheets: () => registerNewEquipmentBudgetInSheets(budget),
+      }
+    );
   };
 
   const isRunning = workflowState.isRunning;
@@ -426,7 +441,7 @@ export function NewEquipmentDeliveryPanel() {
 
         {/* Main action button */}
         <Button
-          onClick={runWorkflow}
+          onClick={openPreview}
           disabled={isRunning || (!settings.saveToDrive && !settings.sendEmail)}
           className="w-full text-white"
           style={{ backgroundColor: company.primaryColor }}
@@ -440,6 +455,20 @@ export function NewEquipmentDeliveryPanel() {
           )}
         </Button>
       </CardContent>
+
+      {pendingAction && (
+        <ConfirmSendModal
+          open={pendingAction !== null}
+          onOpenChange={(open) => { if (!open) setPendingAction(null); }}
+          pendingAction={pendingAction}
+          effectiveSettings={settingsForAction(pendingAction)}
+          drivePath={drivePath}
+          company={company}
+          isRunning={isRunning}
+          onConfirm={handleConfirmSend}
+          previewNode={<NewEquipmentPreview />}
+        />
+      )}
     </Card>
   );
 }

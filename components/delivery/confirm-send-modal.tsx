@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Send, FileText, HardDrive, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -16,6 +17,8 @@ interface ConfirmSendModalProps {
   company: Company;
   isRunning: boolean;
   onConfirm: () => void;
+  /** Preview node to render in the left column. Defaults to the repair BudgetPreview. */
+  previewNode?: ReactNode;
 }
 
 export function ConfirmSendModal({
@@ -27,6 +30,7 @@ export function ConfirmSendModal({
   company,
   isRunning,
   onConfirm,
+  previewNode,
 }: ConfirmSendModalProps) {
   const willDrive = eff.saveToDrive;
   const willEmail = eff.sendEmail;
@@ -61,7 +65,7 @@ export function ConfirmSendModal({
             <div className="h-full overflow-y-auto">
               <div className="py-4 px-2 sm:px-4 flex justify-center">
                 <div className="w-full max-w-[640px] origin-top">
-                  <BudgetPreview />
+                  {previewNode ?? <BudgetPreview />}
                 </div>
               </div>
             </div>
