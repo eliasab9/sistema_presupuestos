@@ -38,7 +38,7 @@ import { ConfirmSendModal } from './confirm-send-modal';
 import { NewEquipmentPreview } from '@/components/preview/new-equipment-preview';
 
 // Build file name for new equipment budget
-function buildNewEquipmentFileName(budget: NewEquipmentBudget): string {
+export function buildNewEquipmentFileName(budget: NewEquipmentBudget): string {
   const rawName = budget.customer.name || 'CLIENTE';
   const clientPart = rawName
     .normalize('NFD')

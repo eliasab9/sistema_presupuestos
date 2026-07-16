@@ -26,9 +26,11 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportToPDF, exportToDOCX, exportToPDFBlob, exportNewEquipmentToPDF } from '@/lib/document/export-pdf';
+import { buildNewEquipmentFileName } from '@/components/delivery/new-equipment-delivery-panel';
 import { registerNewEquipmentBudgetInSheets, registerRepairBudgetInSheets } from '@/lib/delivery/sheets-service';
 import { clearDraft, getBudgetById } from '@/lib/storage/budgets';
-import { fetchBudgetById } from '@/lib/storage/budgets-api';
+import { fetchBudgetById, syncSentBudgetToDb } from '@/lib/storage/budgets-api';
+import { buildBudgetFileName } from '@/lib/delivery/file-builder';
 import { GoogleDriveUploadButton } from '@/components/ui/google-drive-upload-button';
 import { BudgetHistoryPage } from '@/components/budget-history/budget-history-page';
 import { CompanySelector } from '@/components/wizard/company-selector';
@@ -264,8 +266,17 @@ function BudgetApp() {
     setIsExporting(true);
     try {
       await exportToPDF(budget);
-      // Registrar en Sheets y refrescar número para el próximo presupuesto
-      registerRepairBudgetInSheets(budget).then(() => refreshBudgetNumber());
+      // Persistir en DB para que aparezca en el historial y sea editable, pero
+      // SIN registrar en Sheets ni subir a Drive.
+      syncSentBudgetToDb(budget, {
+        budgetType: 'reparacion',
+        status: 'pending',
+        sentAt: new Date().toISOString(),
+        fileName: buildBudgetFileName(budget, 'pdf'),
+        fileFormat: 'pdf',
+      })
+        .then(() => refreshBudgetNumber())
+        .catch((e) => console.error('Failed to sync exported PDF to DB:', e));
       toast.success('PDF exportado correctamente');
     } catch (error) {
       console.error('Error exporting PDF:', error);
@@ -300,8 +311,15 @@ function BudgetApp() {
     setIsExporting(true);
     try {
       await exportNewEquipmentToPDF(newEquipmentContext.budget);
-      // Registrar en Sheets (no bloquea si falla)
-      registerNewEquipmentBudgetInSheets(newEquipmentContext.budget);
+      // Persistir en DB para que aparezca en el historial y sea editable, pero
+      // SIN registrar en Sheets ni subir a Drive.
+      syncSentBudgetToDb(newEquipmentContext.budget, {
+        budgetType: 'equipo_nuevo',
+        status: 'pending',
+        sentAt: new Date().toISOString(),
+        fileName: buildNewEquipmentFileName(newEquipmentContext.budget),
+        fileFormat: 'pdf',
+      }).catch((e) => console.error('Failed to sync exported equipo_nuevo PDF to DB:', e));
       toast.success('PDF exportado correctamente');
     } catch (error) {
       console.error('Error exporting PDF:', error);
