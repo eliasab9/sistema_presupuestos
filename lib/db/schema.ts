@@ -135,6 +135,20 @@ export const budgets = pgTable('budgets', {
   fileName:         text('file_name'),           // Name used at send time
   fileFormat:       text('file_format'),         // 'pdf' | 'docx'
 
+  // ── Hilo de correo ────────────────────────────────────────────────────────
+  // Anclan el presupuesto a la conversación donde el cliente lo pidió, para que
+  // la respuesta —y cualquier corrección o recordatorio posterior— caiga en el
+  // mismo hilo en vez de abrir uno nuevo.
+  //   • emailThreadId: ID de conversación del proveedor. En Gmail es `threadId`;
+  //     en Outlook sería `conversationId`. Opaco, no intercambiable entre ambos.
+  //   • emailMessageId: Message-ID RFC 5322 del mail al que se responde, CON los
+  //     `<>` y respetando mayúsculas. Es el que va en In-Reply-To.
+  //   • emailReferences: cadena `References` completa del padre, IDs separados
+  //     por espacio. La respuesta manda esto + emailMessageId.
+  emailThreadId:   text('email_thread_id'),
+  emailMessageId:  text('email_message_id'),
+  emailReferences: text('email_references'),
+
   // ── Timestamps ────────────────────────────────────────────────────────────
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -144,6 +158,8 @@ export const budgets = pgTable('budgets', {
   index('budgets_status_idx').on(t.status),
   index('budgets_customer_id_idx').on(t.customerId),
   index('budgets_created_at_idx').on(t.createdAt),
+  // Para reabrir el presupuesto asociado a un hilo cuando llega una respuesta.
+  index('budgets_email_thread_id_idx').on(t.emailThreadId),
 ]);
 
 // ── work_items ────────────────────────────────────────────────────────────────

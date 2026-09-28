@@ -22,14 +22,37 @@ import { fetchNextBudgetNumber } from '@/lib/delivery/sheets-service';
 
 // Helper: save active flat arrays into allSections[activeSectionIdx]
 function syncActiveSection(state: Budget): RepairSection[] {
-  return state.allSections.map((s, i) =>
-    i === state.activeSectionIdx
-      ? { ...s, equipment: state.equipment, workItems: state.workItems, bearings: state.bearings, spareParts: state.spareParts, machining: state.machining, labor: state.labor }
-      : s
-  );
+  const active = {
+    equipment: state.equipment, workItems: state.workItems, bearings: state.bearings,
+    spareParts: state.spareParts, machining: state.machining, labor: state.labor,
+  };
+  // Los presupuestos guardados antes de este arreglo llegan con `allSections: []`
+  // y todo el detalle en los arrays planos. Sin materializar la sección, el `map`
+  // devolvería [] y al volver a guardarlos se perderían otra vez.
+  if (state.allSections.length === 0) {
+    return [{ id: crypto.randomUUID(), label: 'Equipo 1', ...active }];
+  }
+  // Un índice fuera de rango dejaría el equipo editado sin volcar a ninguna sección.
+  const activeIdx = Math.min(Math.max(0, state.activeSectionIdx ?? 0), state.allSections.length - 1);
+  return state.allSections.map((s, i) => (i === activeIdx ? { ...s, ...active } : s));
 }
 
-const DEFAULT_EQUIPMENT: Equipment = { type: 'electrobomba_centrifuga', power: 1, quantity: 1 };
+/**
+ * Devuelve el presupuesto con `allSections` al día.
+ *
+ * Las ediciones del equipo activo viven en los arrays planos (`workItems`,
+ * `bearings`, …) y recién se vuelcan a `allSections` al cambiar de sección.
+ * Persistir el estado crudo hacía que un presupuesto de un solo equipo se
+ * guardara con la sección vacía: al reabrirlo para editar no quedaba nada.
+ * Hay que llamar a esto en todo punto donde el presupuesto sale del editor.
+ */
+export function withSyncedSections(budget: Budget): Budget {
+  return { ...budget, allSections: syncActiveSection(budget) };
+}
+
+// Sin tipo ni potencia preseleccionados: si vienen puestos, un descuido cotiza
+// una bomba centrífuga de 1 HP que nadie eligió.
+const DEFAULT_EQUIPMENT: Equipment = { type: '', power: 0, quantity: 1 };
 
 function makeSection(label: string, equipment?: Equipment): RepairSection {
   return { id: crypto.randomUUID(), label, equipment: equipment ?? { ...DEFAULT_EQUIPMENT }, workItems: [], bearings: [], spareParts: [], machining: [], labor: [] };
@@ -324,7 +347,9 @@ function budgetReducer(state: Budget, action: BudgetAction): Budget {
       return {
         ...state,
         ...action.payload,
-        totalFinal: action.payload.subtotalGeneral,
+        // Los presupuestos se cotizan netos: el IVA va como condición comercial,
+        // no como línea. totalTax es 0 salvo que se carguen líneas en taxes.
+        totalFinal: action.payload.subtotalGeneral + state.totalTax,
         updatedAt: new Date().toISOString(),
       };
     

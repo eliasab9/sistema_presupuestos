@@ -60,19 +60,17 @@ export function ConfirmSendModal({
         {/* Body: two columns */}
         <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
 
-          {/* LEFT — live document preview */}
-          <div className="flex-1 min-h-0 border-b lg:border-b-0 lg:border-r overflow-hidden bg-slate-100">
-            <div className="h-full overflow-y-auto">
-              <div className="py-4 px-2 sm:px-4 flex justify-center">
-                <div className="w-full max-w-[640px] origin-top">
-                  {previewNode ?? <BudgetPreview />}
-                </div>
-              </div>
-            </div>
+          {/* LEFT — live document preview.
+              La preview ya trae su propio zoom + scroll y se ajusta al ancho del
+              panel que la contiene: hay que darle el alto completo y dejarla sola.
+              Envolverla en otro contenedor con scroll la dejaba sin altura y la
+              hoja quedaba cortada. */}
+          <div className="flex-1 min-h-96 lg:min-h-0 border-b lg:border-b-0 lg:border-r overflow-hidden bg-slate-100">
+            {previewNode ?? <BudgetPreview />}
           </div>
 
           {/* RIGHT — delivery details + actions */}
-          <div className="w-full lg:w-80 xl:w-96 shrink-0 flex flex-col">
+          <div className="w-full lg:w-80 xl:w-96 lg:shrink-0 flex flex-col min-h-0">
             <div className="flex-1 overflow-y-auto p-4 space-y-3 text-sm">
 
               {/* File */}

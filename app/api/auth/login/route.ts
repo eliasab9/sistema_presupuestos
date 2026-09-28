@@ -22,12 +22,21 @@ export async function POST(request: Request) {
     );
   }
 
+  // Si falta config no se puede autenticar a nadie. Sin este chequeo el login
+  // respondería "contraseña incorrecta" (confuso) o emitiría una cookie vacía.
+  if (!env.SITE_PASSWORD || !env.SESSION_SECRET) {
+    return NextResponse.json(
+      { error: 'Servidor mal configurado: faltan SITE_PASSWORD o SESSION_SECRET.' },
+      { status: 500 }
+    );
+  }
+
   if (parsed.data.password !== env.SITE_PASSWORD) {
     return NextResponse.json({ error: 'Contraseña incorrecta' }, { status: 401 });
   }
 
   const response = NextResponse.json({ success: true });
-  response.cookies.set('auth_session', env.SESSION_SECRET ?? '', {
+  response.cookies.set('auth_session', env.SESSION_SECRET, {
     httpOnly: true,
     secure: env.NODE_ENV === 'production',
     sameSite: 'lax',

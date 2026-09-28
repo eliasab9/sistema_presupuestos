@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Wrench, Plus, Trash2, RefreshCw } from 'lucide-react';
-import { generateSuggestedLabor, formatARS } from '@/lib/pricing/calculations';
+import { generateSuggestedLabor, mergeSuggestedLabor } from '@/lib/pricing/calculations';
 import type { LaborItem } from '@/types/budget';
 
 export function LaborSection() {
@@ -14,35 +14,23 @@ export function LaborSection() {
   const { labor, workItems, equipment } = budget;
   const [newDescription, setNewDescription] = useState('');
   const [newPrice, setNewPrice] = useState('');
-  const prevWorkItemsRef = useRef<string>('');
   const prevSectionIdxRef = useRef<number>(budget.activeSectionIdx);
 
-  // Auto-recalculate when work items change within the same section.
-  // Skip recalculation when the active section itself changes (the correct
-  // labor items are already restored from the section snapshot by the reducer).
+  // Recalcula al cambiar los trabajos, el tipo de equipo o la potencia.
+  // Al cambiar de equipo no: el reducer ya restauró la mano de obra guardada
+  // de esa sección y recalcular ahí pisaría los precios retocados a mano.
   useEffect(() => {
-    const workItemsKey = workItems.map(w => `${w.id}-${w.affectsCalculation}`).join(',');
     const sectionChanged = prevSectionIdxRef.current !== budget.activeSectionIdx;
     prevSectionIdxRef.current = budget.activeSectionIdx;
+    if (sectionChanged) return;
 
-    if (sectionChanged) {
-      // Update ref so future within-section changes are correctly detected
-      prevWorkItemsRef.current = workItemsKey;
-      return;
-    }
-
-    if (prevWorkItemsRef.current !== workItemsKey && workItems.length > 0) {
-      prevWorkItemsRef.current = workItemsKey;
-      handleGenerateSuggestions();
-    }
+    handleGenerateSuggestions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workItems, equipment.type, equipment.power, budget.activeSectionIdx]);
 
   const handleGenerateSuggestions = () => {
     const suggestions = generateSuggestedLabor(workItems, equipment.type, equipment.power);
-    
-    // Merge with existing manual items
-    const manualItems = labor.filter(item => item.isManual);
-    setLabor([...suggestions, ...manualItems]);
+    setLabor(mergeSuggestedLabor(labor, suggestions));
   };
 
   const handleAddManual = () => {
@@ -108,7 +96,7 @@ export function LaborSection() {
                   <Input
                     type="number"
                     value={item.priceARS}
-                    onChange={(e) => updateLabor(item.id, { priceARS: Number(e.target.value), isManual: true })}
+                    onChange={(e) => updateLabor(item.id, { priceARS: Number(e.target.value), priceOverridden: true })}
                     className="w-32 h-8 text-sm text-right"
                   />
                 </div>

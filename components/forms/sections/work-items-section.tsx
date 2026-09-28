@@ -1,19 +1,34 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useBudget } from '@/lib/budget-context';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ClipboardList, Plus, X, Loader2, GripVertical } from 'lucide-react';
-import { EQUIPMENT_TYPE_LABELS, type WorkItem } from '@/types/budget';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ClipboardList, Plus, X, Loader2, GripVertical, Search, Trash2 } from 'lucide-react';
+import {
+  EQUIPMENT_TYPE_LABELS,
+  WORK_ITEMS_BY_EQUIPMENT_TYPE,
+  WORK_SCENARIOS_BY_EQUIPMENT_TYPE,
+  type WorkItem,
+  type WorkScenario,
+} from '@/types/budget';
 
 // A chip row returned from the DB
 interface ChipRow {
   id: string;
   description: string;
   equipmentType: string | null;
+}
+
+// Una fila de la lista de trabajos disponibles. `id` sólo existe si la fila
+// vive en la DB (es la única que se puede borrar del panel de sugeridos).
+interface ChipEntry {
+  key: string;
+  id?: string;
+  description: string;
 }
 
 export function WorkItemsSection() {
@@ -27,8 +42,42 @@ export function WorkItemsSection() {
   const [chips, setChips] = useState<ChipRow[]>([]);
   const [loadingChips, setLoadingChips] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [filter, setFilter] = useState('');
+
+  const selectedDescriptions = new Set(workItems.map(w => w.description));
+
+  // Lista completa de trabajos disponibles: los cargados en la DB de la empresa
+  // + los del catálogo que falten + los que ya estén en el presupuesto. Así,
+  // después de aplicar un escenario, los trabajos que no contempla siguen
+  // estando acá para sumarlos, aunque la tabla `work_items` de esa empresa
+  // haya quedado sembrada con un catálogo viejo.
+  const availableChips: ChipEntry[] = useMemo(() => {
+    const seen = new Set<string>();
+    const out: ChipEntry[] = [];
+    const push = (description: string, id?: string) => {
+      const d = description.trim();
+      if (!d || seen.has(d)) return;
+      seen.add(d);
+      out.push({ key: id ?? `catalog:${d}`, id, description: d });
+    };
+    chips.forEach(c => push(c.description, c.id));
+    if (equipmentType) (WORK_ITEMS_BY_EQUIPMENT_TYPE[equipmentType] ?? []).forEach(d => push(d));
+    workItems.forEach(w => push(w.description));
+    return out;
+  }, [chips, equipmentType, workItems]);
+
+  const normalizedFilter = filter.trim().toLowerCase();
+  const visibleChips = normalizedFilter
+    ? availableChips.filter(c => c.description.toLowerCase().includes(normalizedFilter))
+    : availableChips;
 
   const fetchChips = useCallback(async () => {
+    // Sin tipo de equipo no hay lista que pedir: la API siembra los trabajos
+    // por tipo y sin él devolvería una mezcla de todos.
+    if (!equipmentType) {
+      setChips([]);
+      return;
+    }
     setLoadingChips(true);
     try {
       const res = await fetch(`/api/work-items?companyId=${companyId}&equipmentType=${equipmentType}`);
@@ -40,6 +89,37 @@ export function WorkItemsSection() {
 
   // Reload chips whenever company or equipment type changes
   useEffect(() => { fetchChips(); }, [fetchChips]);
+
+  // Los escenarios salen del catálogo, no de la lista de chips de la DB: cada
+  // empresa tiene su propia tabla de trabajos sugeridos y, si quedó sembrada con
+  // un catálogo viejo, filtrar contra ella hacía desaparecer los escenarios.
+  // Así están disponibles para cualquier equipo del presupuesto y en las dos
+  // empresas; los trabajos que no figuren como chip igual se ven en "Orden en el
+  // presupuesto" y se pueden quitar de ahí.
+  const scenarios: WorkScenario[] = equipmentType
+    ? WORK_SCENARIOS_BY_EQUIPMENT_TYPE[equipmentType] ?? []
+    : [];
+
+  const activeScenarioId = scenarios.find(s =>
+    s.items.length === workItems.length && s.items.every(d => selectedDescriptions.has(d))
+  )?.id ?? null;
+
+  // Aplicar un escenario reemplaza la selección: son combinaciones cerradas, y
+  // después se puede ajustar tildando o destildando a mano.
+  const handleApplyScenario = (scenario: WorkScenario) => {
+    if (activeScenarioId === scenario.id) {
+      reorderWorkItems([]);
+      return;
+    }
+    reorderWorkItems(
+      scenario.items.map((description, order) => ({
+        id: crypto.randomUUID(),
+        description,
+        affectsCalculation: true,
+        order,
+      }))
+    );
+  };
 
   // Toggle chip: add to / remove from the selected work items list
   const handleToggleChip = (description: string) => {
@@ -57,8 +137,11 @@ export function WorkItemsSection() {
   };
 
   // Remove a chip from the DB panel (does not affect the selected list state)
-  const handleDeleteChip = async (e: React.MouseEvent, chip: ChipRow) => {
+  const handleDeleteChip = async (e: React.MouseEvent, chip: ChipEntry) => {
+    // La fila es un <label>: sin preventDefault el click también tildaría el check.
+    e.preventDefault();
     e.stopPropagation();
+    if (!chip.id) return;
     await fetch(`/api/work-items/${chip.id}`, { method: 'DELETE' });
     setChips(prev => prev.filter(c => c.id !== chip.id));
     // Also deselect from the work list if it was selected
@@ -79,12 +162,12 @@ export function WorkItemsSection() {
     setNewItemText('');
 
     // Persist as a chip for this company + equipment type if not already in panel
-    const alreadyInPanel = chips.some(c => c.description === description.trim());
+    const alreadyInPanel = availableChips.some(c => c.description === description.trim());
     if (!alreadyInPanel) {
       const res = await fetch('/api/work-items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, equipmentType, description: description.trim() }),
+        body: JSON.stringify({ companyId, equipmentType: equipmentType || null, description: description.trim() }),
       });
       if (res.ok) {
         const created: ChipRow = await res.json();
@@ -123,73 +206,118 @@ export function WorkItemsSection() {
 
       <CardContent className="space-y-4">
 
-        {/* ── Chips per equipment type ──────────────────────────────────── */}
-        <div className="space-y-2">
-          <div className="flex items-baseline gap-1.5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Seleccioná los trabajos
-            </p>
-            <span className="text-[11px] text-muted-foreground/70">
-              — sugeridos para{' '}
-              <span className="font-medium text-primary">
-                {EQUIPMENT_TYPE_LABELS[equipmentType]}
-              </span>
-            </span>
-          </div>
-
-          {loadingChips ? (
-            <div className="flex items-center gap-1.5 py-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" /> Cargando...
-            </div>
-          ) : (
-            <div className="flex flex-wrap gap-1.5 max-h-52 overflow-y-auto pr-1">
-              {chips.map((chip) => {
-                const isSelected = workItems.some(w => w.description === chip.description);
-                return (
-                  <div key={chip.id} className="flex items-center group/chip">
-                    <button
-                      onClick={() => handleToggleChip(chip.description)}
-                      className={[
-                        'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-l-full border-r-0 transition-all duration-150',
-                        isSelected
-                          ? 'bg-primary text-primary-foreground border-primary shadow-sm hover:bg-primary/80'
-                          : 'bg-background border-border text-foreground hover:border-primary/50 hover:bg-muted/60 cursor-pointer',
-                      ].join(' ')}
-                    >
-                      {isSelected
-                        ? <X className="h-3 w-3 shrink-0" />
-                        : <Plus className="h-3 w-3 shrink-0 text-muted-foreground" />}
-                      {chip.description}
-                    </button>
-                    {/* Remove chip from panel */}
-                    <button
-                      onClick={(e) => handleDeleteChip(e, chip)}
-                      title="Quitar de la lista de sugeridos"
-                      className={[
-                        'inline-flex items-center px-1.5 py-1.5 rounded-r-full border border-l-0 transition-colors',
-                        isSelected
-                          ? 'border-primary bg-primary text-white/70 hover:text-white hover:bg-primary/80'
-                          : 'border-border bg-background text-muted-foreground hover:text-destructive hover:bg-destructive/5',
-                      ].join(' ')}
-                    >
-                      <X className="h-2.5 w-2.5" />
-                    </button>
-                  </div>
-                );
-              })}
-              {chips.length === 0 && !loadingChips && (
-                <p className="text-xs text-muted-foreground italic">
-                  Sin sugeridos. Agregá trabajos con el campo de abajo.
-                </p>
-              )}
-            </div>
-          )}
-          <p className="text-[11px] text-muted-foreground">
-            Click para agregar · Click nuevamente para quitar · ✕ derecho para eliminar de la lista
+        {/* ── Lista de trabajos disponibles para el tipo de equipo ──────── */}
+        {!equipmentType ? (
+          <p className="text-sm text-muted-foreground italic py-2">
+            Elegí primero el tipo de equipo para ver los trabajos sugeridos.
           </p>
-        </div>
+        ) : (
+          <div className="space-y-2">
+            {scenarios.length > 0 && (
+              <div className="space-y-1.5 pb-1">
+                <div className="flex items-baseline gap-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Escenarios
+                  </p>
+                  <span className="text-[11px] text-muted-foreground/70">
+                    — cargan varios trabajos de una vez
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {scenarios.map((scenario) => {
+                    const isActive = activeScenarioId === scenario.id;
+                    return (
+                      <Button
+                        key={scenario.id}
+                        type="button"
+                        size="sm"
+                        variant={isActive ? 'default' : 'outline'}
+                        className="h-7 px-2.5 text-xs font-normal"
+                        onClick={() => handleApplyScenario(scenario)}
+                        title={scenario.items.join('\n')}
+                      >
+                        {scenario.label}
+                        <span className="ml-1.5 opacity-60 tabular-nums">{scenario.items.length}</span>
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
-        {/* ── Agregar trabajo al panel de chips ────────────────────────── */}
+            <div className="flex items-baseline gap-1.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Seleccioná los trabajos
+              </p>
+              <span className="text-[11px] text-muted-foreground/70">
+                — sugeridos para{' '}
+                <span className="font-medium text-primary">
+                  {EQUIPMENT_TYPE_LABELS[equipmentType]}
+                </span>
+              </span>
+            </div>
+
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Buscar trabajo..."
+                className="h-9 pl-8"
+              />
+            </div>
+
+            {loadingChips ? (
+              <div className="flex items-center gap-1.5 py-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" /> Cargando...
+              </div>
+            ) : (
+              // Lista vertical de alto fijo: marcar o desmarcar no reacomoda
+              // nada, así el ítem de al lado sigue donde estaba.
+              <div className="border rounded-lg divide-y h-64 overflow-y-auto">
+                {visibleChips.map((chip) => {
+                  const isSelected = selectedDescriptions.has(chip.description);
+                  return (
+                    <label
+                      key={chip.key}
+                      className={[
+                        'flex items-center gap-2.5 px-3 py-2 cursor-pointer group/row transition-colors',
+                        isSelected ? 'bg-primary/5' : 'hover:bg-muted/50',
+                      ].join(' ')}
+                    >
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => handleToggleChip(chip.description)}
+                        className="shrink-0"
+                      />
+                      <span className={`flex-1 text-sm ${isSelected ? 'font-medium' : ''}`}>
+                        {chip.description}
+                      </span>
+                      {chip.id && (
+                        <button
+                          onClick={(e) => handleDeleteChip(e, chip)}
+                          title="Eliminar de la lista de sugeridos"
+                          className="p-0.5 opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:text-destructive transition-opacity shrink-0"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </label>
+                  );
+                })}
+                {visibleChips.length === 0 && (
+                  <p className="text-xs text-muted-foreground italic p-3">
+                    {availableChips.length === 0
+                      ? 'Sin sugeridos. Agregá trabajos con el campo de abajo.'
+                      : 'Ningún trabajo coincide con la búsqueda.'}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Agregar trabajo a la lista ───────────────────────────────── */}
         <div className="flex gap-2">
           <Input
             value={newItemText}

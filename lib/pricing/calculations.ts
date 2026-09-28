@@ -5,7 +5,7 @@ import {
   CERAMIC_SEAL_COMPACT_PRICE_USD,
   USD_FACTOR,
 } from './data';
-import type { EquipmentType, LaborItem, BearingItem, SparePartItem } from '@/types/budget';
+import type { EquipmentType, LaborItem, LaborWorkType, BearingItem, SparePartItem } from '@/types/budget';
 
 /**
  * Find the closest labor pricing for a given HP
@@ -30,9 +30,9 @@ export function findLaborPricing(powerHP: number) {
  * Calculate labor price based on equipment type and power
  */
 export function calculateLaborPrice(
-  equipmentType: EquipmentType,
+  equipmentType: EquipmentType | '',
   powerHP: number,
-  workType: 'winding' | 'motor_maintenance' | 'pump_maintenance' | 'reducer_maintenance' | 'balancing' | 'oil_change'
+  workType: LaborWorkType
 ): { priceARS: number; formula: string } {
   const pricing = findLaborPricing(powerHP);
   
@@ -176,95 +176,192 @@ export function calculateSubtotals(
   };
 }
 
+/** Minúsculas y sin acentos, para que el matching no dependa de la tilde. */
+function normalize(text: string): string {
+  return text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+/**
+ * ¿Qué mano de obra tarifada implica este trabajo?
+ *
+ * El matching es por intención, no por palabra suelta. Antes alcanzaba con que
+ * la descripción dijera "bobinado" para cobrar una fabricación completa: eso
+ * hacía que "Limpieza de bobinado con solvente" o "Barnizado estator" cotizaran
+ * como bobinado nuevo. La fabricación sólo entra si el trabajo la nombra.
+ */
+export function detectLaborType(description: string): LaborWorkType | null {
+  const desc = normalize(description);
+
+  if (/fabricacion de bobinado|fabricar bobinado|bobinado nuevo|rebobinad/.test(desc)) {
+    return 'winding';
+  }
+  if (desc.includes('balanceo')) return 'balancing';
+  if (desc.includes('cambio de aceite')) return 'oil_change';
+
+  // Desarme/armado: el mantenimiento se cobra según el equipo que se abre.
+  const isDisassembly = desc.includes('desarme') || desc.includes('armado');
+  if (isDisassembly) {
+    if (desc.includes('reductor')) return 'reducer_maintenance';
+    if (desc.includes('bomba')) return 'pump_maintenance';
+    if (desc.includes('motor')) return 'motor_maintenance';
+  }
+
+  return null;
+}
+
+const LABOR_TYPE_DESCRIPTIONS: Record<LaborWorkType, (powerHP: number) => string> = {
+  winding:             (hp) => `Fabricación de bobinado — motor ${hp} HP`,
+  motor_maintenance:   (hp) => `Mantenimiento motor — ${hp} HP`,
+  pump_maintenance:    (hp) => `Mantenimiento bomba — ${hp} HP`,
+  reducer_maintenance: (hp) => `Mantenimiento reductor — ${hp} HP`,
+  balancing:           ()   => 'Balanceo dinámico',
+  oil_change:          ()   => 'Cambio de aceite',
+};
+
 /**
  * Generate suggested labor items based on work items and equipment
  */
 export function generateSuggestedLabor(
   workItems: { description: string; affectsCalculation: boolean }[],
-  equipmentType: EquipmentType,
+  equipmentType: EquipmentType | '',
   powerHP: number
 ): LaborItem[] {
   const labor: LaborItem[] = [];
-  const addedTypes = new Set<string>();
-  
+  const addedTypes = new Set<LaborWorkType>();
+
   for (const item of workItems) {
     if (!item.affectsCalculation) continue;
-    
-    const desc = item.description.toLowerCase();
-    
-    // Detect winding/bobinado work - only add once
-    if ((desc.includes('bobinado') || desc.includes('fabricación de bobinado')) && !addedTypes.has('winding')) {
-      const { priceARS, formula } = calculateLaborPrice(equipmentType, powerHP, 'winding');
-      labor.push({
-        id: crypto.randomUUID(),
-        description: `Fabricación de bobinado — motor ${powerHP} HP`,
-        priceARS,
-        formula,
-        isManual: false,
-      });
-      addedTypes.add('winding');
-    }
-    
-    // Detect balancing work
-    if (desc.includes('balanceo') && !addedTypes.has('balancing')) {
-      const { priceARS, formula } = calculateLaborPrice(equipmentType, powerHP, 'balancing');
-      labor.push({
-        id: crypto.randomUUID(),
-        description: 'Balanceo dinámico',
-        priceARS,
-        formula,
-        isManual: false,
-      });
-      addedTypes.add('balancing');
-    }
-    
-    // Detect oil change work
-    if (desc.includes('cambio de aceite') && !addedTypes.has('oil_change')) {
-      const { priceARS, formula } = calculateLaborPrice(equipmentType, powerHP, 'oil_change');
-      labor.push({
-        id: crypto.randomUUID(),
-        description: 'Cambio de aceite',
-        priceARS,
-        formula,
-        isManual: false,
-      });
-      addedTypes.add('oil_change');
-    }
-    
-    // Detect motor maintenance (desarme/armado motor)
-    if ((desc.includes('desarme') && desc.includes('motor')) || 
-        (desc.includes('armado') && desc.includes('motor'))) {
-      if (!addedTypes.has('motor_maintenance')) {
-        const { priceARS, formula } = calculateLaborPrice(equipmentType, powerHP, 'motor_maintenance');
-        labor.push({
-          id: crypto.randomUUID(),
-          description: `Mantenimiento motor — ${powerHP} HP`,
-          priceARS,
-          formula,
-          isManual: false,
-        });
-        addedTypes.add('motor_maintenance');
-      }
-    }
-    
-    // Detect pump maintenance (desarme/armado bomba)
-    if ((desc.includes('desarme') && desc.includes('bomba')) || 
-        (desc.includes('armado') && desc.includes('bomba'))) {
-      if (!addedTypes.has('pump_maintenance')) {
-        const { priceARS, formula } = calculateLaborPrice(equipmentType, powerHP, 'pump_maintenance');
-        labor.push({
-          id: crypto.randomUUID(),
-          description: `Mantenimiento bomba — ${powerHP} HP`,
-          priceARS,
-          formula,
-          isManual: false,
-        });
-        addedTypes.add('pump_maintenance');
-      }
-    }
+
+    const laborType = detectLaborType(item.description);
+    if (!laborType || addedTypes.has(laborType)) continue;
+    addedTypes.add(laborType);
+
+    const { priceARS, formula } = calculateLaborPrice(equipmentType, powerHP, laborType);
+    labor.push({
+      id: crypto.randomUUID(),
+      description: LABOR_TYPE_DESCRIPTIONS[laborType](powerHP),
+      priceARS,
+      formula,
+      isManual: false,
+      laborType,
+    });
   }
-  
+
   return labor;
+}
+
+/**
+ * Funde las sugerencias nuevas con la mano de obra que ya está cargada.
+ *
+ * Cada sugerido se identifica por `laborType`, no por su posición ni por el
+ * flag `isManual`. Antes el recálculo concatenaba sugerencias + ítems manuales,
+ * y como editar un precio marcaba el ítem como manual, el mismo trabajo quedaba
+ * dos veces y el total se inflaba.
+ *
+ * Reglas: se conservan los ítems manuales, los precios retocados a mano no se
+ * pisan, y un sugerido cuyo trabajo ya no está seleccionado desaparece.
+ */
+export function mergeSuggestedLabor(
+  existing: LaborItem[],
+  suggestions: LaborItem[]
+): LaborItem[] {
+  const previousByType = new Map<LaborWorkType, LaborItem>();
+  for (const item of existing) {
+    if (item.isManual) continue;
+    // Los presupuestos guardados antes de que existiera `laborType` sólo tienen
+    // la descripción. Se deduce de ahí para no duplicar el ítem al recalcular,
+    // y se respeta el precio con el que se cotizaron.
+    const type = item.laborType ?? inferLaborTypeFromLabel(item.description);
+    if (!type) continue;
+    previousByType.set(type, item.laborType ? item : { ...item, priceOverridden: true });
+  }
+
+  const merged = suggestions.map((suggestion) => {
+    const previous = previousByType.get(suggestion.laborType!);
+    if (!previous) return suggestion;
+    return {
+      ...suggestion,
+      id: previous.id,
+      description: previous.description,
+      ...(previous.priceOverridden
+        ? { priceARS: previous.priceARS, priceOverridden: true }
+        : {}),
+    };
+  });
+
+  return [...merged, ...existing.filter((item) => item.isManual)];
+}
+
+/** Deduce el tipo desde la descripción que generó una versión anterior. */
+function inferLaborTypeFromLabel(description: string): LaborWorkType | null {
+  const desc = normalize(description);
+  if (desc.startsWith('fabricacion de bobinado')) return 'winding';
+  if (desc.startsWith('mantenimiento motor')) return 'motor_maintenance';
+  if (desc.startsWith('mantenimiento bomba')) return 'pump_maintenance';
+  if (desc.startsWith('mantenimiento reductor')) return 'reducer_maintenance';
+  if (desc.startsWith('balanceo dinamico')) return 'balancing';
+  if (desc.startsWith('cambio de aceite')) return 'oil_change';
+  return null;
+}
+
+// ── Discriminación de IVA ────────────────────────────────────────────────────
+// La fabricación de bobinado tributa al 10,5 % (trabajo sobre bien mueble);
+// materiales, repuestos, mecanizado y el resto de la mano de obra, al 21 %.
+
+export const IVA_RATE_WINDING = 0.105;
+export const IVA_RATE_GENERAL = 0.21;
+
+export interface IvaBreakdown {
+  /** Neto que tributa al 10,5 % (fabricación de bobinado). */
+  baseWinding: number;
+  /** Neto que tributa al 21 % (materiales y mantenimiento). */
+  baseGeneral: number;
+  ivaWinding: number;
+  ivaGeneral: number;
+  net: number;
+  ivaTotal: number;
+  gross: number;
+}
+
+/** ¿Este ítem de mano de obra es fabricación de bobinado? */
+export function isWindingLabor(item: LaborItem): boolean {
+  const type = item.laborType ?? inferLaborTypeFromLabel(item.description);
+  return type === 'winding';
+}
+
+/**
+ * Reparte el neto del presupuesto entre las dos alícuotas de IVA.
+ * Recorre todas las secciones: el desglose es del presupuesto completo.
+ */
+export function calculateIvaBreakdown(
+  sections: { labor: LaborItem[]; bearings: BearingItem[]; spareParts: SparePartItem[]; machining: { subtotalARS: number }[] }[]
+): IvaBreakdown {
+  let baseWinding = 0;
+  let baseGeneral = 0;
+
+  for (const section of sections) {
+    for (const item of section.labor) {
+      if (isWindingLabor(item)) baseWinding += item.priceARS;
+      else baseGeneral += item.priceARS;
+    }
+    baseGeneral += section.bearings.reduce((sum, i) => sum + i.subtotalARS, 0);
+    baseGeneral += section.spareParts.reduce((sum, i) => sum + i.subtotalARS, 0);
+    baseGeneral += section.machining.reduce((sum, i) => sum + i.subtotalARS, 0);
+  }
+
+  const ivaWinding = Math.round(baseWinding * IVA_RATE_WINDING);
+  const ivaGeneral = Math.round(baseGeneral * IVA_RATE_GENERAL);
+  const net = baseWinding + baseGeneral;
+
+  return {
+    baseWinding,
+    baseGeneral,
+    ivaWinding,
+    ivaGeneral,
+    net,
+    ivaTotal: ivaWinding + ivaGeneral,
+    gross: net + ivaWinding + ivaGeneral,
+  };
 }
 
 /**

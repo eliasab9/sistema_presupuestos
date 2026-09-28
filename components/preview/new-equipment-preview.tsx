@@ -18,7 +18,10 @@ export function NewEquipmentPreview() {
   const [zoom, setZoom] = useState(0.75);
   const [fitZoom, setFitZoom] = useState(0.75);
   const [docHeight, setDocHeight] = useState(DOC_HEIGHT_PX);
-  const zoomInitializedRef = useRef(false);
+  // Mientras no se toque el zoom a mano, la hoja sigue el ancho del panel. Si
+  // sólo se ajustaba en el primer render, al cambiar de tamaño el contenedor
+  // (abrir el modal de envío, agrandar la ventana) la hoja quedaba chica o cortada.
+  const manualZoomRef = useRef(false);
 
   // Observe the panel (not the inner ScrollArea container, which uses
   // display: table and grows to fit content — creating a feedback loop).
@@ -28,10 +31,7 @@ export function NewEquipmentPreview() {
       const w = entry.contentRect.width - 24;
       const computed = Math.min(0.95, Math.max(0.2, w / DOC_WIDTH_PX));
       setFitZoom(computed);
-      if (!zoomInitializedRef.current) {
-        zoomInitializedRef.current = true;
-        setZoom(computed);
-      }
+      if (!manualZoomRef.current) setZoom(computed);
     });
     ro.observe(panelRef.current);
     return () => ro.disconnect();
@@ -80,7 +80,7 @@ export function NewEquipmentPreview() {
       {/* Zoom controls */}
       <div className="flex items-center justify-end gap-1 px-3 py-1.5 bg-neutral-100 border-b border-neutral-300 shrink-0">
         <button
-          onClick={() => setZoom(z => Math.max(0.2, +(z - 0.1).toFixed(2)))}
+          onClick={() => { manualZoomRef.current = true; setZoom(z => Math.max(0.2, +(z - 0.1).toFixed(2))); }}
           className="p-1 rounded hover:bg-neutral-200 text-neutral-600 transition-colors"
           title="Reducir zoom"
         >
@@ -90,14 +90,14 @@ export function NewEquipmentPreview() {
           {Math.round(zoom * 100)}%
         </span>
         <button
-          onClick={() => setZoom(z => Math.min(2, +(z + 0.1).toFixed(2)))}
+          onClick={() => { manualZoomRef.current = true; setZoom(z => Math.min(2, +(z + 0.1).toFixed(2))); }}
           className="p-1 rounded hover:bg-neutral-200 text-neutral-600 transition-colors"
           title="Aumentar zoom"
         >
           <ZoomIn className="h-3.5 w-3.5" />
         </button>
         <button
-          onClick={() => setZoom(fitZoom)}
+          onClick={() => { manualZoomRef.current = false; setZoom(fitZoom); }}
           className="p-1 rounded hover:bg-neutral-200 text-neutral-500 transition-colors"
           title="Ajustar a ventana"
         >

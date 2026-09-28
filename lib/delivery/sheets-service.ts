@@ -54,7 +54,8 @@ export async function reserveBudgetNumber(companyId: string): Promise<string | n
  * Construye el texto de "Mercadería Cotizada" para un presupuesto de reparación.
  */
 function buildRepairMerchandise(budget: Budget): string {
-  const label = EQUIPMENT_TYPE_LABELS[budget.equipment.type] ?? budget.equipment.type;
+  const { type, customTypeLabel } = budget.equipment;
+  const label = customTypeLabel ?? (type ? EQUIPMENT_TYPE_LABELS[type] : 'equipo');
   return `Reparación de ${label}`;
 }
 

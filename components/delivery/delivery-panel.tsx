@@ -29,7 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useBudget } from '@/lib/budget-context';
+import { useBudget, withSyncedSections } from '@/lib/budget-context';
 import { COMPANIES } from '@/types/budget';
 import { saveBudget } from '@/lib/storage/budgets';
 import { syncSentBudgetToDb } from '@/lib/storage/budgets-api';
@@ -50,6 +50,7 @@ import {
 import { buildBudgetFileName } from '@/lib/delivery/file-builder';
 import { buildBudgetEmailSubject, buildBudgetEmailBody } from '@/lib/delivery/email-builder';
 import { runDeliveryWorkflow, validateDeliverySettings, retryWorkflowStep } from '@/lib/delivery/workflow';
+import { reserveBudgetNumber } from '@/lib/delivery/sheets-service';
 
 export function DeliveryPanel() {
   const { budget, setMeta, refreshBudgetNumber, resetBudget } = useBudget();
@@ -165,14 +166,28 @@ export function DeliveryPanel() {
   // Execute the workflow after user confirms in the preview modal
   const handleConfirmSend = async () => {
     if (!pendingAction) return;
-    const effective = settingsForAction(pendingAction);
+    let effective = settingsForAction(pendingAction);
     setPendingAction(null);
 
     setWorkflowResult(null);
     setWorkflowState(createInitialWorkflowState());
 
+    // Recién acá se fija el número. El que se mostró mientras se editaba es
+    // tentativo: si otra sesión envió en el medio, este presupuesto tomaría el
+    // mismo. Reservarlo al confirmar cierra esa ventana.
+    // withSyncedSections vuelca lo editado del equipo activo a allSections: es
+    // lo único que se persiste, y sin esto el presupuesto se guarda vacío.
+    let budgetToSend = withSyncedSections(budget);
+    const reserved = await reserveBudgetNumber(budget.companyId);
+    if (reserved && reserved !== budget.meta.number) {
+      setMeta({ number: reserved });
+      budgetToSend = { ...budgetToSend, meta: { ...budget.meta, number: reserved } };
+      // El nombre del archivo lleva el número, hay que rearmarlo.
+      effective = { ...effective, fileName: buildBudgetFileName(budgetToSend, effective.fileFormat) };
+    }
+
     const result = await runDeliveryWorkflow(
-      budget,
+      budgetToSend,
       effective,
       (state) => setWorkflowState(state)
     );
@@ -184,7 +199,7 @@ export function DeliveryPanel() {
       const sentAt = new Date().toISOString();
       try {
         saveBudget({
-          ...budget,
+          ...budgetToSend,
           status: 'pending',
           sentAt,
         });
@@ -193,7 +208,7 @@ export function DeliveryPanel() {
       }
       // Persist to DB so the budget is accessible from any device, including
       // the Drive link so the file can be reopened from the history page.
-      syncSentBudgetToDb(budget, {
+      syncSentBudgetToDb(budgetToSend, {
         budgetType: 'reparacion',
         status: 'pending',
         sentAt,

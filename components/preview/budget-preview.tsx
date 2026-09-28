@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useBudget } from '@/lib/budget-context';
-import { formatARS, formatUSD } from '@/lib/pricing/calculations';
+import { formatARS, formatUSD, calculateIvaBreakdown } from '@/lib/pricing/calculations';
 import { EQUIPMENT_TYPE_LABELS, COMPANIES } from '@/types/budget';
 import type { RepairSection } from '@/types/budget';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -29,7 +29,7 @@ function SectionBreakdown({ section, sectionTotals, primaryColor, isOnly, format
   const { equipment, workItems, labor, bearings, spareParts, machining } = section;
 
   const equipmentDisplay = [
-    equipment.customTypeLabel ?? EQUIPMENT_TYPE_LABELS[equipment.type],
+    equipment.customTypeLabel ?? (equipment.type ? EQUIPMENT_TYPE_LABELS[equipment.type] : null),
     equipment.power ? `${equipment.power} HP` : null,
   ].filter(Boolean).join(' · ');
 
@@ -138,7 +138,10 @@ export function BudgetPreview() {
   const [zoom, setZoom] = useState(0.5);
   const [fitZoom, setFitZoom] = useState(0.5);
   const [docHeight, setDocHeight] = useState(DOC_HEIGHT_PX);
-  const zoomInitializedRef = useRef(false);
+  // Mientras no se toque el zoom a mano, la hoja sigue el ancho del panel. Si
+  // sólo se ajustaba en el primer render, al cambiar de tamaño el contenedor
+  // (abrir el modal de envío, agrandar la ventana) la hoja quedaba chica o cortada.
+  const manualZoomRef = useRef(false);
 
   // Auto-fit zoom to PANEL width (not the inner ScrollArea container, which
   // uses display: table and grows to fit the document — that creates a feedback loop).
@@ -148,10 +151,7 @@ export function BudgetPreview() {
       const w = entry.contentRect.width - 24;
       const computed = Math.min(0.95, Math.max(0.2, w / DOC_WIDTH_PX));
       setFitZoom(computed);
-      if (!zoomInitializedRef.current) {
-        zoomInitializedRef.current = true;
-        setZoom(computed);
-      }
+      if (!manualZoomRef.current) setZoom(computed);
     });
     ro.observe(panelRef.current);
     return () => ro.disconnect();
@@ -194,6 +194,8 @@ export function BudgetPreview() {
 
   const grandTotal = perSectionTotals.reduce((sum, t) => sum + t.labor + t.bearings + t.spareParts + t.machining, 0);
 
+  const iva = calculateIvaBreakdown(effectiveSections);
+
   const formatTotal = (amount: number) =>
     meta.currency === 'USD' && meta.exchangeRate > 0
       ? formatUSD(amount / meta.exchangeRate)
@@ -208,7 +210,7 @@ export function BudgetPreview() {
       {/* Zoom controls */}
       <div className="flex items-center justify-end gap-1 px-3 py-1.5 bg-neutral-100 border-b border-neutral-300 shrink-0">
         <button
-          onClick={() => setZoom(z => Math.max(0.2, +(z - 0.1).toFixed(2)))}
+          onClick={() => { manualZoomRef.current = true; setZoom(z => Math.max(0.2, +(z - 0.1).toFixed(2))); }}
           className="p-1 rounded hover:bg-neutral-200 text-neutral-600 transition-colors"
           title="Reducir zoom"
         >
@@ -218,14 +220,14 @@ export function BudgetPreview() {
           {Math.round(zoom * 100)}%
         </span>
         <button
-          onClick={() => setZoom(z => Math.min(2, +(z + 0.1).toFixed(2)))}
+          onClick={() => { manualZoomRef.current = true; setZoom(z => Math.min(2, +(z + 0.1).toFixed(2))); }}
           className="p-1 rounded hover:bg-neutral-200 text-neutral-600 transition-colors"
           title="Aumentar zoom"
         >
           <ZoomIn className="h-3.5 w-3.5" />
         </button>
         <button
-          onClick={() => setZoom(fitZoom)}
+          onClick={() => { manualZoomRef.current = false; setZoom(fitZoom); }}
           className="p-1 rounded hover:bg-neutral-200 text-neutral-500 transition-colors"
           title="Ajustar a ventana"
         >
@@ -359,6 +361,47 @@ export function BudgetPreview() {
                     {formatTotal(grandTotal)}
                   </span>
                 </div>
+              )}
+
+              {/* Discriminación de IVA — el presupuesto se cotiza neto, esto es
+                  sólo informativo para que el cliente sepa qué alícuota aplica. */}
+              {iva.net > 0 && (
+                <section style={{ marginTop: '12px', marginBottom: '12px' }}>
+                  <h3 style={{
+                    fontSize: '10px', fontWeight: 700, color: primaryColor,
+                    textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px',
+                  }}>
+                    Discriminación de IVA
+                  </h3>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid #ddd', color: '#555' }}>
+                        <th style={{ textAlign: 'left',  padding: '3px 0' }}>Concepto</th>
+                        <th style={{ textAlign: 'right', padding: '3px 0' }}>Neto</th>
+                        <th style={{ textAlign: 'right', padding: '3px 0' }}>IVA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
+                        <td style={{ padding: '3px 0' }}>Fabricación de bobinado — 10,5%</td>
+                        <td style={{ textAlign: 'right', padding: '3px 0' }}>{formatTotal(iva.baseWinding)}</td>
+                        <td style={{ textAlign: 'right', padding: '3px 0' }}>{formatTotal(iva.ivaWinding)}</td>
+                      </tr>
+                      <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
+                        <td style={{ padding: '3px 0' }}>Materiales y mantenimiento — 21%</td>
+                        <td style={{ textAlign: 'right', padding: '3px 0' }}>{formatTotal(iva.baseGeneral)}</td>
+                        <td style={{ textAlign: 'right', padding: '3px 0' }}>{formatTotal(iva.ivaGeneral)}</td>
+                      </tr>
+                      <tr style={{ fontWeight: 700, color: '#333' }}>
+                        <td style={{ padding: '4px 0' }}>Total con IVA</td>
+                        <td style={{ textAlign: 'right', padding: '4px 0' }}>{formatTotal(iva.net)}</td>
+                        <td style={{ textAlign: 'right', padding: '4px 0', color: primaryColor }}>
+                          {formatTotal(iva.gross)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </section>
               )}
 
               {/* Observations */}

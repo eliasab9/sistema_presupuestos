@@ -51,7 +51,9 @@ function createEmptyBudget(): NewEquipmentBudget {
     id: crypto.randomUUID(),
     companyId: 'bemec',
     meta: {
-      number: String(Math.floor(Math.random() * 9000) + 1000),
+      // Se completa con el número tentativo que devuelve Sheets al montar y se
+      // fija con el número reservado al enviar. Nunca inventar uno acá.
+      number: '',
       date: today.toLocaleDateString('es-AR'),
       validUntil: validUntil.toLocaleDateString('es-AR'),
       exchangeRate: 0,

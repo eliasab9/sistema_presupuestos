@@ -3,10 +3,14 @@ import { z } from 'zod';
 import { refreshAccessToken } from '@/lib/google-drive';
 import { requireSheetsConfig } from '@/lib/config';
 import { createLogger } from '@/lib/logger';
+import {
+  SHEETS_API,
+  resolveSheetName,
+  readColumnsAB,
+  findNextBudgetSlot,
+} from '@/lib/sheets/sheet-rows';
 
 const log = createLogger('sheets/register');
-
-const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 const registerSchema = z.object({
   companyId:    z.enum(['bemec', 'bamore']),
@@ -18,30 +22,13 @@ const registerSchema = z.object({
   responsable:  z.string().optional(),
 });
 
-async function resolveSheetName(accessToken: string, spreadsheetId: string, gid: number): Promise<string> {
-  const res = await fetch(`${SHEETS_API}/${spreadsheetId}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    log.error('Google Sheets metadata error', { status: res.status, body: errText });
-    throw new Error(`No se pudo obtener metadata (${res.status}): ${errText}`);
-  }
-  const data = await res.json();
-  const sheet = (data.sheets ?? []).find(
-    (s: { properties: { sheetId: number; title: string } }) => s.properties?.sheetId === gid
-  );
-  if (!sheet) throw new Error(`No se encontró pestaña con gid=${gid}`);
-  return sheet.properties.title as string;
-}
-
 /**
  * Encuentra la fila donde escribir para el número de presupuesto dado.
  *
  * Estrategia:
- *   1. Buscar la fila donde A = budgetNumber y B está vacía → ese es el slot correcto.
- *   2. Fallback: si no existe esa fila, escribir en la primera fila con B vacía
- *      inmediatamente después de la última fila con B llena.
+ *   1. Buscar la fila donde A = budgetNumber y B está vacía → es el slot que
+ *      dejó reserve-number para este presupuesto.
+ *   2. Fallback: si no existe (p. ej. la reserva falló), tomar el próximo slot libre.
  */
 async function findTargetRow(
   accessToken: string,
@@ -49,16 +36,8 @@ async function findTargetRow(
   sheetName: string,
   budgetNumber: string
 ): Promise<number> {
-  const range = encodeURIComponent(`'${sheetName}'!A:B`);
-  const res = await fetch(`${SHEETS_API}/${spreadsheetId}/values/${range}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) throw new Error(`Error leyendo columnas A:B: ${await res.text()}`);
+  const rows = await readColumnsAB(accessToken, spreadsheetId, sheetName);
 
-  const data = await res.json();
-  const rows: string[][] = data.values ?? [];
-
-  // Buscar exactamente la fila donde A = budgetNumber y B está vacía
   for (let i = 1; i < rows.length; i++) {
     const colA = rows[i]?.[0]?.trim() ?? '';
     const colB = rows[i]?.[1]?.trim() ?? '';
@@ -67,13 +46,7 @@ async function findTargetRow(
     }
   }
 
-  // Fallback: fila siguiente a la última con B llena
-  let lastFilledIndex = 0;
-  for (let i = 1; i < rows.length; i++) {
-    const colB = rows[i]?.[1]?.trim() ?? '';
-    if (colB !== '') lastFilledIndex = i;
-  }
-  return lastFilledIndex + 2; // +1 por la siguiente fila, +1 por 1-based
+  return findNextBudgetSlot(rows).rowNumber;
 }
 
 /**

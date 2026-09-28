@@ -5,7 +5,14 @@
       "name": "Next.js Dev Server",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "port": 3000
+      "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "Main Repo Dev Server",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd /Users/eliasagustin/Desktop/b_fP2Bvfw9F9n && PORT=3010 npm run dev"],
+      "port": 3010
     },
     {
       "name": "CRUMA Demo",

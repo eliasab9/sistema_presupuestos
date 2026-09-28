@@ -5,8 +5,9 @@
  * previewed and tested independently of html2canvas / jsPDF.
  */
 
-import type { Budget } from '@/types/budget';
+import type { Budget, RepairSection } from '@/types/budget';
 import { COMPANIES } from '@/types/budget';
+import { calculateIvaBreakdown } from '@/lib/pricing/calculations';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('es-AR', {
@@ -25,19 +26,130 @@ const EQUIPMENT_TYPE_LABELS: Record<string, string> = {
 };
 
 /**
+ * Equipos del presupuesto. Los presupuestos multi-equipo viven en `allSections`;
+ * los viejos (y los que nunca cambiaron de sección) sólo tienen los arrays planos.
+ * El llamador debería pasar el presupuesto ya sincronizado con `withSyncedSections`.
+ */
+function resolveSections(budget: Budget): RepairSection[] {
+  if (budget.allSections?.length) return budget.allSections;
+  return [{
+    id: 'flat',
+    label: 'Equipo 1',
+    equipment: budget.equipment,
+    workItems: budget.workItems,
+    bearings: budget.bearings,
+    spareParts: budget.spareParts,
+    machining: budget.machining,
+    labor: budget.labor,
+  }];
+}
+
+const sectionTotal = (s: RepairSection) =>
+  s.labor.reduce((sum, i) => sum + i.priceARS, 0) +
+  s.bearings.reduce((sum, i) => sum + i.subtotalARS, 0) +
+  s.spareParts.reduce((sum, i) => sum + i.subtotalARS, 0) +
+  s.machining.reduce((sum, i) => sum + i.subtotalARS, 0);
+
+const equipmentDisplayOf = (equipment: RepairSection['equipment']) => [
+  equipment.customTypeLabel ?? EQUIPMENT_TYPE_LABELS[equipment.type] ?? equipment.type,
+  equipment.subtype,
+  equipment.power ? `${equipment.power} HP` : null,
+].filter(Boolean).join(' · ');
+
+/**
+ * Detalle de un equipo: datos, trabajos y desglose económico.
+ * Con un solo equipo se omiten el título y el subtotal por equipo.
+ */
+function buildSectionHtml(section: RepairSection, isOnly: boolean, primaryColor: string): string {
+  const { equipment, workItems, labor, bearings, spareParts, machining } = section;
+  return `
+  <h3>${isOnly ? 'Equipo' : section.label}</h3>
+  <p style="font-weight: bold; margin: 5px 0;">${equipmentDisplayOf(equipment)}</p>
+  ${equipment.brand  ? `<p style="margin: 3px 0;">Marca: ${equipment.brand}</p>`  : ''}
+  ${equipment.model  ? `<p style="margin: 3px 0;">Modelo: ${equipment.model}</p>` : ''}
+  ${equipment.serial ? `<p style="margin: 3px 0;">Serie: ${equipment.serial}</p>` : ''}
+
+  ${workItems.length > 0 ? `
+  <p class="section-title">TRABAJO A REALIZAR</p>
+  <ul>${workItems.map(i => `<li>${i.description}</li>`).join('')}</ul>
+  ` : ''}
+
+  ${labor.length > 0 ? `
+  <p class="section-title">MANO DE OBRA</p>
+  <table><tbody>${labor.map(i => `<tr><td>${i.description}</td><td class="amount">${formatCurrency(i.priceARS)}</td></tr>`).join('')}</tbody></table>
+  ` : ''}
+
+  ${bearings.length > 0 ? `
+  <p class="section-title">RODAMIENTOS</p>
+  <table><tbody>${bearings.map(i => `<tr><td>Rod. ${i.code} × ${i.quantity}</td><td class="amount">${formatCurrency(i.subtotalARS)}</td></tr>`).join('')}</tbody></table>
+  ` : ''}
+
+  ${spareParts.length > 0 ? `
+  <p class="section-title">REPUESTOS</p>
+  <table><tbody>${spareParts.map(i => `<tr><td>${i.description} × ${i.quantity}</td><td class="amount">${formatCurrency(i.subtotalARS)}</td></tr>`).join('')}</tbody></table>
+  ` : ''}
+
+  ${machining.length > 0 ? `
+  <p class="section-title">MECANIZADOS</p>
+  <table><tbody>${machining.map(i => `<tr><td>${i.description} × ${i.quantity}</td><td class="amount">${formatCurrency(i.subtotalARS)}</td></tr>`).join('')}</tbody></table>
+  ` : ''}
+
+  ${isOnly ? '' : `
+  <table style="border-top: 1px solid ${primaryColor};">
+    <tr><td style="font-weight: bold; color: #555;">Subtotal ${section.label}</td><td class="amount" style="color: ${primaryColor};">${formatCurrency(sectionTotal(section))}</td></tr>
+  </table>
+  `}
+  `;
+}
+
+/**
+ * Bloque de discriminación de IVA, igual al de la vista previa / PDF.
+ * El presupuesto se cotiza neto: esto es informativo, no cambia el SUBTOTAL.
+ * Devuelve '' si no hay nada cotizado.
+ */
+function buildIvaBreakdownHtml(sections: RepairSection[], primaryColor: string): string {
+  const iva = calculateIvaBreakdown(sections);
+  if (iva.net <= 0) return '';
+
+  return `
+  <p class="section-title">DISCRIMINACIÓN DE IVA</p>
+  <table style="font-size: 9pt;">
+    <tr style="color: #555;">
+      <td>Concepto</td>
+      <td class="amount">Neto</td>
+      <td class="amount">IVA</td>
+    </tr>
+    <tr>
+      <td>Fabricación de bobinado — 10,5%</td>
+      <td class="amount">${formatCurrency(iva.baseWinding)}</td>
+      <td class="amount">${formatCurrency(iva.ivaWinding)}</td>
+    </tr>
+    <tr>
+      <td>Materiales y mantenimiento — 21%</td>
+      <td class="amount">${formatCurrency(iva.baseGeneral)}</td>
+      <td class="amount">${formatCurrency(iva.ivaGeneral)}</td>
+    </tr>
+    <tr>
+      <td><b>Total con IVA</b></td>
+      <td class="amount">${formatCurrency(iva.net)}</td>
+      <td class="amount" style="color: ${primaryColor};">${formatCurrency(iva.gross)}</td>
+    </tr>
+  </table>
+  `;
+}
+
+/**
  * Build the HTML string for the "save / download" DOCX variant.
  * Includes a two-column header with logo and budget meta block.
  */
 export function buildRepairDocxDownloadHtml(budget: Budget, logoBase64: string): string {
-  const { meta, customer, equipment, workItems, labor, bearings, spareParts, machining } = budget;
+  const { meta, customer } = budget;
   const company = COMPANIES[budget.companyId];
   const primaryColor = company.primaryColor;
 
-  const equipmentDisplay = [
-    equipment.customTypeLabel ?? EQUIPMENT_TYPE_LABELS[equipment.type] ?? equipment.type,
-    equipment.subtype,
-    equipment.power ? `${equipment.power} HP` : null,
-  ].filter(Boolean).join(' · ');
+  const sections = resolveSections(budget);
+  const isOnly = sections.length === 1;
+  const grandTotal = sections.reduce((sum, s) => sum + sectionTotal(s), 0);
 
   return `<!DOCTYPE html>
 <html>
@@ -102,42 +214,13 @@ export function buildRepairDocxDownloadHtml(budget: Budget, logoBase64: string):
     ${customer.address ? `<div class="client-row"><span class="client-label">Dirección:</span> <span class="client-value">${[customer.address, customer.locality, customer.province].filter(Boolean).join(', ')}</span></div>` : ''}
   </div>
 
-  <h3>Equipo</h3>
-  <p style="font-weight: bold; margin: 5px 0;">${equipmentDisplay}</p>
-  ${equipment.brand  ? `<p style="margin: 3px 0;">Marca: ${equipment.brand}</p>`  : ''}
-  ${equipment.model  ? `<p style="margin: 3px 0;">Modelo: ${equipment.model}</p>` : ''}
-  ${equipment.serial ? `<p style="margin: 3px 0;">Serie: ${equipment.serial}</p>` : ''}
-
-  ${workItems.length > 0 ? `
-  <h3>Detalle del Trabajo a Realizar</h3>
-  <ul>${workItems.map(i => `<li>${i.description}</li>`).join('')}</ul>
-  ` : ''}
-
-  <h3>Desglose Económico</h3>
-
-  ${labor.length > 0 ? `
-  <p class="section-title">MANO DE OBRA</p>
-  <table><tbody>${labor.map(i => `<tr><td>${i.description}</td><td class="amount">${formatCurrency(i.priceARS)}</td></tr>`).join('')}</tbody></table>
-  ` : ''}
-
-  ${bearings.length > 0 ? `
-  <p class="section-title">RODAMIENTOS</p>
-  <table><tbody>${bearings.map(i => `<tr><td>Rod. ${i.code} × ${i.quantity}</td><td class="amount">${formatCurrency(i.subtotalARS)}</td></tr>`).join('')}</tbody></table>
-  ` : ''}
-
-  ${spareParts.length > 0 ? `
-  <p class="section-title">REPUESTOS</p>
-  <table><tbody>${spareParts.map(i => `<tr><td>${i.description} × ${i.quantity}</td><td class="amount">${formatCurrency(i.subtotalARS)}</td></tr>`).join('')}</tbody></table>
-  ` : ''}
-
-  ${machining.length > 0 ? `
-  <p class="section-title">MECANIZADOS</p>
-  <table><tbody>${machining.map(i => `<tr><td>${i.description} × ${i.quantity}</td><td class="amount">${formatCurrency(i.subtotalARS)}</td></tr>`).join('')}</tbody></table>
-  ` : ''}
+  ${sections.map(s => buildSectionHtml(s, isOnly, primaryColor)).join('')}
 
   <div class="total-row">
-    <table><tr><td class="total-label">SUBTOTAL</td><td class="total-amount">${formatCurrency(budget.subtotalGeneral)}</td></tr></table>
+    <table><tr><td class="total-label">SUBTOTAL</td><td class="total-amount">${formatCurrency(grandTotal)}</td></tr></table>
   </div>
+
+  ${buildIvaBreakdownHtml(sections, primaryColor)}
 
   <h3>Observaciones</h3>
   <div class="observations">
@@ -163,15 +246,13 @@ export function buildRepairDocxDownloadHtml(budget: Budget, logoBase64: string):
  * Build the HTML string for the workflow blob variant (simpler inline header).
  */
 export function buildRepairDocxBlobHtml(budget: Budget, logoBase64: string): string {
-  const { meta, customer, equipment, workItems, labor, bearings, spareParts, machining } = budget;
+  const { meta, customer } = budget;
   const company = COMPANIES[budget.companyId];
   const primaryColor = company.primaryColor;
 
-  const equipmentDisplay = [
-    equipment.customTypeLabel ?? EQUIPMENT_TYPE_LABELS[equipment.type] ?? equipment.type,
-    equipment.subtype,
-    equipment.power ? `${equipment.power} HP` : null,
-  ].filter(Boolean).join(' · ');
+  const sections = resolveSections(budget);
+  const isOnly = sections.length === 1;
+  const grandTotal = sections.reduce((sum, s) => sum + sectionTotal(s), 0);
 
   return `<!DOCTYPE html>
 <html>
@@ -223,20 +304,11 @@ export function buildRepairDocxBlobHtml(budget: Budget, logoBase64: string): str
     <div class="client-row"><span class="client-label">Teléfono:</span> <span class="client-value">${customer.phone || '—'}</span></div>
   </div>
 
-  <h3>Equipo</h3>
-  <p><strong>${equipmentDisplay}</strong></p>
-  ${equipment.brand ? `<p>Marca: ${equipment.brand}</p>` : ''}
-  ${equipment.model ? `<p>Modelo: ${equipment.model}</p>` : ''}
+  ${sections.map(s => buildSectionHtml(s, isOnly, primaryColor)).join('')}
 
-  ${workItems.length > 0 ? `<h3>Detalle del Trabajo</h3><ul>${workItems.map(i => `<li>${i.description}</li>`).join('')}</ul>` : ''}
+  <div class="total-row"><table><tr><td class="total-label">SUBTOTAL</td><td class="total-amount">${formatCurrency(grandTotal)}</td></tr></table></div>
 
-  <h3>Desglose Económico</h3>
-  ${labor.length > 0     ? `<p class="section-title">MANO DE OBRA</p><table>${labor.map(i => `<tr><td>${i.description}</td><td class="amount">${formatCurrency(i.priceARS)}</td></tr>`).join('')}</table>` : ''}
-  ${bearings.length > 0  ? `<p class="section-title">RODAMIENTOS</p><table>${bearings.map(i => `<tr><td>Rod. ${i.code} × ${i.quantity}</td><td class="amount">${formatCurrency(i.subtotalARS)}</td></tr>`).join('')}</table>` : ''}
-  ${spareParts.length > 0 ? `<p class="section-title">REPUESTOS</p><table>${spareParts.map(i => `<tr><td>${i.description} × ${i.quantity}</td><td class="amount">${formatCurrency(i.subtotalARS)}</td></tr>`).join('')}</table>` : ''}
-  ${machining.length > 0 ? `<p class="section-title">MECANIZADOS</p><table>${machining.map(i => `<tr><td>${i.description} × ${i.quantity}</td><td class="amount">${formatCurrency(i.subtotalARS)}</td></tr>`).join('')}</table>` : ''}
-
-  <div class="total-row"><table><tr><td class="total-label">SUBTOTAL</td><td class="total-amount">${formatCurrency(budget.subtotalGeneral)}</td></tr></table></div>
+  ${buildIvaBreakdownHtml(sections, primaryColor)}
 
   <h3>Observaciones</h3>
   <div class="observations">

@@ -1,8 +1,14 @@
 // Google Drive OAuth and API utilities
 
+// Al agregar o sacar scopes hay que rehacer el consentimiento: un refresh token
+// ya emitido conserva los permisos que tenía, no los de esta lista.
 export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/spreadsheets',
+  // Leer el pedido del cliente para sacarle threadId y Message-ID.
+  'https://www.googleapis.com/auth/gmail.readonly',
+  // Dejar la respuesta como borrador dentro de ese mismo hilo.
+  'https://www.googleapis.com/auth/gmail.compose',
 ];
 
 export const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';

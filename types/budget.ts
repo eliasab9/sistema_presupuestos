@@ -66,7 +66,9 @@ export type EquipmentType =
   | 'otro';
 
 export interface Equipment {
-  type: EquipmentType;
+  // '' = todavía no se eligió. El tipo condiciona los trabajos sugeridos y el
+  // encabezado del presupuesto, así que tiene que elegirlo el vendedor.
+  type: EquipmentType | '';
   subtype?: string;
   customTypeLabel?: string; // Set when a custom DB type is selected (type='otro')
   power: number; // HP
@@ -120,13 +122,29 @@ export interface MachiningItem {
   notes?: string;
 }
 
+// Tipos de mano de obra con precio tarifado por potencia.
+export type LaborWorkType =
+  | 'winding'
+  | 'motor_maintenance'
+  | 'pump_maintenance'
+  | 'reducer_maintenance'
+  | 'balancing'
+  | 'oil_change';
+
 // Labor items
 export interface LaborItem {
   id: string;
   description: string;
   priceARS: number;
   formula?: string;
+  // true = lo escribió a mano el vendedor. Los sugeridos nunca pasan a true:
+  // marcarlos así los duplicaba en cada recálculo.
   isManual: boolean;
+  // Presente sólo en los ítems sugeridos. Es la identidad estable que permite
+  // recalcular sin duplicar ni perder los precios que el vendedor retocó.
+  laborType?: LaborWorkType;
+  // El vendedor editó el precio a mano: el recálculo respeta su valor.
+  priceOverridden?: boolean;
   notes?: string;
 }
 
@@ -369,6 +387,154 @@ export const WORK_ITEMS_BY_EQUIPMENT_TYPE: Record<EquipmentType, string[]> = {
 
 // Common work items for checklist (kept for backwards compatibility)
 export const COMMON_WORK_ITEMS = WORK_ITEMS_BY_EQUIPMENT_TYPE.otro;
+
+/**
+ * Escenarios de trabajo: combinaciones típicas para no tener que ir tildando
+ * trabajo por trabajo. Cada escenario se arma con los trabajos que ya tiene
+ * cargados ese tipo de equipo en WORK_ITEMS_BY_EQUIPMENT_TYPE.
+ */
+export interface WorkScenario {
+  id: string;
+  label: string;
+  items: string[];
+}
+
+// Atajos para no repetir las descripciones largas (y que un typo no pase
+// desapercibido: el test compara cada escenario contra el catálogo del equipo).
+const W = {
+  recepcion: 'Recepción e inspección inicial del equipo.',
+  desarmeMotor: 'Desarme general del motor eléctrico.',
+  desarmeBomba: 'Desarme general de la bomba centrífuga.',
+  desarmeSumergible: 'Desarme general de la electrobomba sumergible.',
+  desarmeVacio: 'Desarme general de la bomba de vacío.',
+  desarmeReductor: 'Desarme general del reductor.',
+  bobinado: 'Fabricación de bobinado nuevo del motor.',
+  barnizado: 'Barnizado estator (aislación clase F).',
+  limpieza: 'Limpieza de bobinado con solvente dieléctrico.',
+  barnizRojo: 'Aplicación de barniz rojo de terminación.',
+  rodamientos: 'Reemplazo de rodamientos.',
+  sello: 'Reemplazo de sello mecánico.',
+  cambioEstator: 'Cambio de estator.',
+  mecanizadoEje: 'Mecanizado de eje.',
+  balanceo: 'Balanceo dinámico.',
+  aceite: 'Cambio de aceite.',
+  armado: 'Armado, verificación y ensayo final de funcionamiento.',
+} as const;
+
+export const WORK_SCENARIOS_BY_EQUIPMENT_TYPE: Record<EquipmentType, WorkScenario[]> = {
+  motor_electrico: [
+    { id: 'mantenimiento', label: 'Mantenimiento', items: [
+      W.recepcion, W.desarmeMotor, W.limpieza, W.barnizRojo, W.rodamientos, W.armado,
+    ]},
+    { id: 'mantenimiento_balanceo', label: 'Mantenimiento + balanceo', items: [
+      W.recepcion, W.desarmeMotor, W.limpieza, W.barnizRojo, W.rodamientos, W.balanceo, W.armado,
+    ]},
+    { id: 'bobinado', label: 'Reparación con bobinado', items: [
+      W.recepcion, W.desarmeMotor, W.bobinado, W.barnizado, W.barnizRojo, W.rodamientos, W.armado,
+    ]},
+    { id: 'bobinado_balanceo', label: 'Mantenimiento + balanceo + bobinado', items: [
+      W.recepcion, W.desarmeMotor, W.bobinado, W.barnizado, W.barnizRojo, W.rodamientos, W.balanceo, W.armado,
+    ]},
+  ],
+  electrobomba_centrifuga: [
+    { id: 'mantenimiento', label: 'Mantenimiento', items: [
+      W.recepcion, W.desarmeBomba, W.desarmeMotor, W.limpieza, W.rodamientos, W.sello, W.armado,
+    ]},
+    { id: 'bobinado', label: 'Reparación con bobinado', items: [
+      W.recepcion, W.desarmeBomba, W.desarmeMotor, W.bobinado, W.barnizado, W.rodamientos, W.sello, W.armado,
+    ]},
+    { id: 'mantenimiento_eje', label: 'Mantenimiento + mecanizado de eje', items: [
+      W.recepcion, W.desarmeBomba, W.desarmeMotor, W.limpieza, W.rodamientos, W.sello, W.mecanizadoEje, W.armado,
+    ]},
+  ],
+  electrobomba_sumergible: [
+    { id: 'mantenimiento', label: 'Mantenimiento', items: [
+      W.recepcion, W.desarmeSumergible, W.desarmeMotor, W.rodamientos, W.sello, W.armado,
+    ]},
+    { id: 'bobinado', label: 'Reparación con bobinado', items: [
+      W.recepcion, W.desarmeSumergible, W.desarmeMotor, W.bobinado, W.barnizado, W.rodamientos, W.sello, W.armado,
+    ]},
+    { id: 'mantenimiento_eje', label: 'Mantenimiento + mecanizado de eje', items: [
+      W.recepcion, W.desarmeSumergible, W.desarmeMotor, W.rodamientos, W.sello, W.mecanizadoEje, W.armado,
+    ]},
+  ],
+  bomba_centrifuga: [
+    { id: 'mantenimiento', label: 'Mantenimiento', items: [
+      W.recepcion, W.desarmeBomba, W.rodamientos, W.sello, W.armado,
+    ]},
+    { id: 'mantenimiento_eje', label: 'Mantenimiento + mecanizado de eje', items: [
+      W.recepcion, W.desarmeBomba, W.rodamientos, W.sello, W.mecanizadoEje, W.armado,
+    ]},
+  ],
+  bomba_vacio: [
+    { id: 'mantenimiento', label: 'Mantenimiento', items: [
+      W.recepcion, W.desarmeVacio, W.rodamientos, W.sello, W.armado,
+    ]},
+    { id: 'mantenimiento_eje', label: 'Mantenimiento + mecanizado de eje', items: [
+      W.recepcion, W.desarmeVacio, W.rodamientos, W.sello, W.mecanizadoEje, W.armado,
+    ]},
+  ],
+  motovibrador: [
+    { id: 'mantenimiento', label: 'Mantenimiento', items: [
+      W.recepcion, W.desarmeMotor, W.rodamientos, W.armado,
+    ]},
+    { id: 'mantenimiento_balanceo', label: 'Mantenimiento + balanceo', items: [
+      W.recepcion, W.desarmeMotor, W.rodamientos, W.balanceo, W.armado,
+    ]},
+    { id: 'bobinado', label: 'Reparación con bobinado', items: [
+      W.recepcion, W.desarmeMotor, W.bobinado, W.barnizado, W.rodamientos, W.armado,
+    ]},
+    { id: 'bobinado_balanceo', label: 'Mantenimiento + balanceo + bobinado', items: [
+      W.recepcion, W.desarmeMotor, W.bobinado, W.barnizado, W.rodamientos, W.balanceo, W.armado,
+    ]},
+  ],
+  reductor: [
+    { id: 'mantenimiento', label: 'Mantenimiento', items: [
+      W.recepcion, W.desarmeReductor, W.rodamientos, W.aceite, W.armado,
+    ]},
+    { id: 'mantenimiento_balanceo', label: 'Mantenimiento + balanceo', items: [
+      W.recepcion, W.desarmeReductor, W.rodamientos, W.aceite, W.balanceo, W.armado,
+    ]},
+  ],
+  estator: [
+    { id: 'mantenimiento', label: 'Limpieza y barnizado', items: [
+      W.recepcion, W.limpieza, W.barnizRojo,
+    ]},
+    { id: 'bobinado', label: 'Rebobinado', items: [
+      W.recepcion, W.bobinado, W.barnizado, W.barnizRojo,
+    ]},
+    { id: 'cambio', label: 'Cambio de estator', items: [
+      W.recepcion, W.cambioEstator,
+    ]},
+  ],
+  eje_balancear: [
+    { id: 'balanceo', label: 'Balanceo', items: [
+      W.recepcion, W.balanceo, W.armado,
+    ]},
+    { id: 'mecanizado_balanceo', label: 'Mecanizado + balanceo', items: [
+      W.recepcion, W.mecanizadoEje, W.balanceo, W.armado,
+    ]},
+  ],
+  bowl_balancear: [
+    { id: 'balanceo', label: 'Balanceo', items: [
+      W.recepcion, W.balanceo, W.armado,
+    ]},
+  ],
+  otro: [
+    { id: 'mantenimiento', label: 'Mantenimiento', items: [
+      W.recepcion, W.desarmeMotor, W.limpieza, W.barnizRojo, W.rodamientos, W.armado,
+    ]},
+    { id: 'mantenimiento_balanceo', label: 'Mantenimiento + balanceo', items: [
+      W.recepcion, W.desarmeMotor, W.limpieza, W.barnizRojo, W.rodamientos, W.balanceo, W.armado,
+    ]},
+    { id: 'bobinado', label: 'Reparación con bobinado', items: [
+      W.recepcion, W.desarmeMotor, W.bobinado, W.barnizado, W.barnizRojo, W.rodamientos, W.armado,
+    ]},
+    { id: 'bobinado_balanceo', label: 'Mantenimiento + balanceo + bobinado', items: [
+      W.recepcion, W.desarmeMotor, W.bobinado, W.barnizado, W.barnizRojo, W.rodamientos, W.balanceo, W.armado,
+    ]},
+  ],
+};
 
 export const EQUIPMENT_TYPE_LABELS: Record<EquipmentType, string> = {
   motor_electrico: 'Motor eléctrico',

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { BudgetProvider, useBudget } from '@/lib/budget-context';
+import { BudgetProvider, useBudget, withSyncedSections } from '@/lib/budget-context';
 import { NewEquipmentProvider, useNewEquipment } from '@/lib/new-equipment-context';
 import { BudgetForm } from '@/components/forms/budget-form';
 import { BudgetPreview } from '@/components/preview/budget-preview';
@@ -49,23 +49,51 @@ import {
 // BudgetContext reducer expects when calling loadBudget: flat fields
 // (equipment/workItems/...) populated from allSections[activeSectionIdx].
 
-const DEFAULT_EQUIPMENT: Equipment = { type: 'electrobomba_centrifuga', power: 1, quantity: 1 };
+const DEFAULT_EQUIPMENT: Equipment = { type: '', power: 0, quantity: 1 };
+
+/** ¿El presupuesto tiene detalle cargado, o sólo la cabecera? */
+function hasRepairDetail(b: Partial<Budget>): boolean {
+  const filled = (s: Partial<RepairSection>) =>
+    !!(s.workItems?.length || s.bearings?.length || s.spareParts?.length ||
+       s.machining?.length || s.labor?.length || s.equipment?.type);
+  return (b.allSections ?? []).some(filled) || filled(b);
+}
+
+/** Sólo el detalle: la cabecera (número, cliente, estado, archivo) sale de la DB. */
+function pickRepairDetail(b: Budget) {
+  return {
+    allSections: b.allSections ?? [],
+    activeSectionIdx: b.activeSectionIdx ?? 0,
+    equipment: b.equipment, workItems: b.workItems, bearings: b.bearings,
+    spareParts: b.spareParts, machining: b.machining, labor: b.labor,
+  };
+}
 
 function expandActiveSection(b: Budget): Budget {
-  const sections = (b.allSections && b.allSections.length > 0) ? b.allSections : [];
-  const activeIdx = Math.min(
-    Math.max(0, b.activeSectionIdx ?? 0),
-    Math.max(0, sections.length - 1)
-  );
-  const active: RepairSection | undefined = sections[activeIdx];
+  const flat = {
+    equipment:  b.equipment  ?? { ...DEFAULT_EQUIPMENT },
+    workItems:  b.workItems  ?? [],
+    bearings:   b.bearings   ?? [],
+    spareParts: b.spareParts ?? [],
+    machining:  b.machining  ?? [],
+    labor:      b.labor      ?? [],
+  };
+  // Los presupuestos viejos se guardaron con `allSections: []` y el detalle en los
+  // arrays planos. Materializar la sección los deja editables y evita que el
+  // próximo guardado los vuelva a vaciar.
+  const sections: RepairSection[] = (b.allSections && b.allSections.length > 0)
+    ? b.allSections
+    : [{ id: crypto.randomUUID(), label: 'Equipo 1', ...flat }];
+  const activeIdx = Math.min(Math.max(0, b.activeSectionIdx ?? 0), sections.length - 1);
+  const active = sections[activeIdx];
   return {
     ...b,
-    equipment:  active?.equipment  ?? b.equipment  ?? { ...DEFAULT_EQUIPMENT },
-    workItems:  active?.workItems  ?? b.workItems  ?? [],
-    bearings:   active?.bearings   ?? b.bearings   ?? [],
-    spareParts: active?.spareParts ?? b.spareParts ?? [],
-    machining:  active?.machining  ?? b.machining  ?? [],
-    labor:      active?.labor      ?? b.labor      ?? [],
+    equipment:  active.equipment  ?? flat.equipment,
+    workItems:  active.workItems  ?? flat.workItems,
+    bearings:   active.bearings   ?? flat.bearings,
+    spareParts: active.spareParts ?? flat.spareParts,
+    machining:  active.machining  ?? flat.machining,
+    labor:      active.labor      ?? flat.labor,
     activeSectionIdx: activeIdx,
     allSections: sections,
   };
@@ -212,11 +240,20 @@ function BudgetApp() {
       }
 
       if (type === 'reparacion') {
-        const hydrated = row
-          ? rehydrateRepairBudgetFromRow(row)
-          : getBudgetById(budgetId)
-          ? expandActiveSection(getBudgetById(budgetId)!)
-          : null;
+        const local = getBudgetById(budgetId);
+        let hydrated = row ? rehydrateRepairBudgetFromRow(row) : null;
+
+        // Los presupuestos enviados antes de que todos los caminos de salida
+        // sincronizaran las secciones quedaron en la DB con la cabecera sola. La
+        // copia de localStorage de la máquina que los envió sí tiene el detalle,
+        // así que la usamos para rellenarlos.
+        let recovered = false;
+        if (hydrated && !hasRepairDetail(hydrated) && local && hasRepairDetail(local)) {
+          hydrated = expandActiveSection({ ...hydrated, ...pickRepairDetail(local) });
+          recovered = true;
+        }
+        if (!hydrated && local) hydrated = expandActiveSection(local);
+
         if (!hydrated) {
           toast.error('No se encontraron los datos para editar este presupuesto');
           return;
@@ -225,7 +262,15 @@ function BudgetApp() {
         setBudgetType('reparacion');
         loadBudget(hydrated);
         setCurrentView('budget');
-        toast.success('Presupuesto cargado para editar');
+        if (recovered) {
+          toast.success('Presupuesto recuperado desde la copia local de esta computadora');
+        } else if (!hasRepairDetail(hydrated)) {
+          toast.warning(
+            'Este presupuesto se guardó sin el detalle. Quedan el número y el cliente; el archivo original está en el historial.'
+          );
+        } else {
+          toast.success('Presupuesto cargado para editar');
+        }
       } else {
         if (!row) {
           toast.error(
@@ -268,7 +313,7 @@ function BudgetApp() {
       await exportToPDF(budget);
       // Persistir en DB para que aparezca en el historial y sea editable, pero
       // SIN registrar en Sheets ni subir a Drive.
-      syncSentBudgetToDb(budget, {
+      syncSentBudgetToDb(withSyncedSections(budget), {
         budgetType: 'reparacion',
         status: 'pending',
         sentAt: new Date().toISOString(),
@@ -289,7 +334,18 @@ function BudgetApp() {
   const handleExportDOCX = async () => {
     setIsExporting(true);
     try {
-      await exportToDOCX(budget);
+      // El DOCX se arma desde `allSections`: sin sincronizar, un presupuesto de un
+      // solo equipo se exportaría vacío.
+      const budgetToExport = withSyncedSections(budget);
+      await exportToDOCX(budgetToExport);
+      // Persistir en DB para que aparezca en el historial y sea editable.
+      syncSentBudgetToDb(budgetToExport, {
+        budgetType: 'reparacion',
+        status: 'pending',
+        sentAt: new Date().toISOString(),
+        fileName: buildBudgetFileName(budget, 'docx'),
+        fileFormat: 'docx',
+      }).catch((e) => console.error('Failed to sync exported DOCX to DB:', e));
       // Registrar en Sheets y refrescar número para el próximo presupuesto
       registerRepairBudgetInSheets(budget).then(() => refreshBudgetNumber());
       toast.success('Documento exportado correctamente');

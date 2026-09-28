@@ -31,7 +31,7 @@ import { getDefaultDeliverySettings, createInitialWorkflowState } from '@/types/
 
 import { exportNewEquipmentToPDFBlob } from '@/lib/document/export-pdf';
 import { runDeliveryWorkflow } from '@/lib/delivery/workflow';
-import { registerNewEquipmentBudgetInSheets } from '@/lib/delivery/sheets-service';
+import { registerNewEquipmentBudgetInSheets, reserveBudgetNumber } from '@/lib/delivery/sheets-service';
 import { syncSentBudgetToDb } from '@/lib/storage/budgets-api';
 import type { NewEquipmentBudget } from '@/types/budget';
 import { ConfirmSendModal } from './confirm-send-modal';
@@ -163,16 +163,28 @@ export function NewEquipmentDeliveryPanel() {
 
   const handleConfirmSend = async () => {
     if (!pendingAction) return;
-    const effective = settingsForAction(pendingAction);
+    let effective = settingsForAction(pendingAction);
     setPendingAction(null);
 
     setWorkflowResult(null);
 
-    const result = await runDeliveryWorkflowInternal(effective);
+    // Recién acá se fija el número. El que se mostró mientras se editaba es
+    // tentativo: si otra sesión envió en el medio, este presupuesto tomaría el
+    // mismo. Reservarlo al confirmar cierra esa ventana.
+    let budgetToSend = budget;
+    const reserved = await reserveBudgetNumber(budget.companyId);
+    if (reserved && reserved !== budget.meta.number) {
+      setMeta({ number: reserved });
+      budgetToSend = { ...budget, meta: { ...budget.meta, number: reserved } };
+      // El nombre del archivo lleva el número, hay que rearmarlo.
+      effective = { ...effective, fileName: buildNewEquipmentFileName(budgetToSend) };
+    }
+
+    const result = await runDeliveryWorkflowInternal(effective, budgetToSend);
     setWorkflowResult(result);
     if (result.success) {
       const sentAt = new Date().toISOString();
-      syncSentBudgetToDb(budget, {
+      syncSentBudgetToDb(budgetToSend, {
         budgetType: 'equipo_nuevo',
         status: 'pending',
         sentAt,
@@ -185,14 +197,17 @@ export function NewEquipmentDeliveryPanel() {
     if (result.steps.generate.success) refreshBudgetNumber();
   };
 
-  const runDeliveryWorkflowInternal = async (effective: DeliverySettings) => {
+  const runDeliveryWorkflowInternal = async (
+    effective: DeliverySettings,
+    target: NewEquipmentBudget
+  ) => {
     return runDeliveryWorkflow(
-      budget,
+      target,
       effective,
       (newState) => setWorkflowState(newState),
       {
-        generateFile: () => exportNewEquipmentToPDFBlob(budget),
-        registerInSheets: () => registerNewEquipmentBudgetInSheets(budget),
+        generateFile: () => exportNewEquipmentToPDFBlob(target),
+        registerInSheets: () => registerNewEquipmentBudgetInSheets(target),
       }
     );
   };
