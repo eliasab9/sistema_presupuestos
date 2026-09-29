@@ -310,9 +310,10 @@ export async function runDeliveryWorkflow(
           },
           ccEmails,
           budget.companyId,
-          sigImage
+          sigImage,
+          settings.emailThread
         );
-        
+
         state.emailResult = emailResult;
         
         if (emailResult.success) {
@@ -432,7 +433,8 @@ export async function retryWorkflowStep(
       { name: settings.fileName, content: generatedFile.blob },
       ccEmails,
       budget.companyId,
-      sigImage
+      sigImage,
+      settings.emailThread
     );
     return { success: result.success, error: result.error };
   }

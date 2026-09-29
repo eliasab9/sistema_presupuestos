@@ -112,6 +112,10 @@ function clientBudgetToRow(b: Record<string, unknown>) {
     driveWebViewLink: (b.driveWebViewLink as string) ?? null,
     fileName: (b.fileName as string) ?? null,
     fileFormat: (b.fileFormat as string) ?? null,
+
+    emailThreadId: (b.emailThreadId as string) ?? null,
+    emailMessageId: (b.emailMessageId as string) ?? null,
+    emailReferences: (b.emailReferences as string) ?? null,
   };
 }
 
@@ -127,6 +131,9 @@ function rowToClientBudget(r: typeof budgets.$inferSelect): Partial<Budget> & {
   budgetType: string;
   items: unknown[];
   subtotalItems: number;
+  emailThreadId: string | null;
+  emailMessageId: string | null;
+  emailReferences: string | null;
 } {
   return {
     id: r.id,
@@ -168,5 +175,8 @@ function rowToClientBudget(r: typeof budgets.$inferSelect): Partial<Budget> & {
     fileName: r.fileName,
     fileFormat: r.fileFormat,
     budgetType: r.budgetType,
+    emailThreadId: r.emailThreadId,
+    emailMessageId: r.emailMessageId,
+    emailReferences: r.emailReferences,
   };
 }

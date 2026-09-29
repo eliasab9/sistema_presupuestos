@@ -14,6 +14,8 @@ import {
   FolderOpen,
   Paperclip,
   Save,
+  Reply,
+  Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,6 +51,7 @@ import {
 } from '@/types/delivery';
 import { buildBudgetFileName } from '@/lib/delivery/file-builder';
 import { buildBudgetEmailSubject, buildBudgetEmailBody } from '@/lib/delivery/email-builder';
+import { parseEmailThreadRef, buildReplySubject } from '@/lib/delivery/email-thread';
 import { runDeliveryWorkflow, validateDeliverySettings, retryWorkflowStep } from '@/lib/delivery/workflow';
 import { reserveBudgetNumber } from '@/lib/delivery/sheets-service';
 
@@ -67,6 +70,10 @@ export function DeliveryPanel() {
 
   // Preview/confirmation modal state
   const [pendingAction, setPendingAction] = useState<null | 'full' | 'drive' | 'email'>(null);
+
+  // Hilo de correo: texto pegado por el usuario. Vacío = mail nuevo.
+  const [threadRaw, setThreadRaw] = useState('');
+  const [threadOpen, setThreadOpen] = useState(false);
 
   // Signature editor state (mirrors budget.meta but editable independently)
   const [sigText, setSigText] = useState(budget.meta.sellerSignature ?? '');
@@ -111,6 +118,21 @@ export function DeliveryPanel() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [budget.id, budget.customer.email, budget.companyId, settings.fileFormat, budget.meta.responsable, budget.meta.sellerSignature]);
   
+  /**
+   * El usuario pega los encabezados del correo original (o sólo su Message-ID).
+   * Si se puede leer un Message-ID, el presupuesto se manda como respuesta y el
+   * asunto pasa a `Re: …`. Si no, se envía como conversación nueva.
+   */
+  const handleThreadRawChange = (raw: string) => {
+    setThreadRaw(raw);
+    const thread = parseEmailThreadRef(raw);
+    setSettings(prev => ({
+      ...prev,
+      emailThread: thread ?? undefined,
+      emailSubject: thread?.subject ? buildReplySubject(thread.subject) : prev.emailSubject,
+    }));
+  };
+
   // Update file name when format changes
   const handleFormatChange = (format: FileFormat) => {
     const fileName = buildBudgetFileName(budget, format);
@@ -216,6 +238,9 @@ export function DeliveryPanel() {
         driveWebViewLink: result.steps.drive.webViewLink,
         fileName: effective.fileName,
         fileFormat: effective.fileFormat,
+        emailThreadId: effective.emailThread?.threadId,
+        emailMessageId: effective.emailThread?.messageId,
+        emailReferences: effective.emailThread?.references,
       }).catch((e) => console.error('Failed to sync sent budget to DB:', e));
       showToast.success('Presupuesto enviado y archivado como pendiente');
       // Slight delay so the user sees the success state before the form clears
@@ -457,6 +482,48 @@ export function DeliveryPanel() {
                 disabled={isRunning}
               />
             </div>
+
+            {/* Responder dentro de un hilo existente. Opcional: si el pedido
+                llegó por teléfono o WhatsApp no hay nada que pegar. */}
+            <Collapsible open={threadOpen} onOpenChange={setThreadOpen}>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground">
+                  <Reply className="w-3 h-3 mr-1" />
+                  Responder a un correo existente (opcional)
+                  {settings.emailThread && <Check className="w-3 h-3 ml-1 text-green-600" />}
+                  {threadOpen
+                    ? <ChevronUp className="w-3 h-3 ml-1" />
+                    : <ChevronDown className="w-3 h-3 ml-1" />}
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-2 pt-2">
+                <Textarea
+                  value={threadRaw}
+                  onChange={(e) => handleThreadRawChange(e.target.value)}
+                  disabled={isRunning}
+                  rows={3}
+                  className="font-mono text-xs"
+                  placeholder={'Pegá acá los encabezados del correo del cliente, o sólo su Message-ID.\nEj: <AM0PR09MB1234@EURPRD09.prod.outlook.com>'}
+                />
+                {threadRaw.trim() && !settings.emailThread && (
+                  <p className="text-xs text-amber-600">
+                    No se encontró un Message-ID válido. El presupuesto se va a enviar como
+                    un correo nuevo.
+                  </p>
+                )}
+                {settings.emailThread && (
+                  <p className="text-xs text-green-600 break-all">
+                    Se va a responder dentro del hilo de{' '}
+                    <code>{settings.emailThread.messageId}</code>
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  En Outlook: abrí el correo → Archivo → Propiedades → copiá los
+                  &quot;Encabezados de Internet&quot;. En Gmail: ⋮ → Mostrar original.
+                </p>
+              </CollapsibleContent>
+            </Collapsible>
+
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Cuerpo del mensaje</Label>

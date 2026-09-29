@@ -19,6 +19,10 @@ const sendEmailSchema = z.object({
   // Inline signature image embedded in the HTML body
   signatureBase64:    z.string().optional(),
   signatureImageMime: z.string().optional(),
+  // Threading RFC 5322: sólo vienen cuando el presupuesto responde a un mail
+  // existente. Sin ellos el envío es una conversación nueva.
+  inReplyTo:          z.string().optional(),
+  references:         z.string().optional(),
 });
 
 /** Convert plain text to safe HTML (preserves line breaks, escapes special chars). */
@@ -90,6 +94,8 @@ export async function POST(request: NextRequest) {
       attachmentName:     formData.get('attachmentName') ?? undefined,
       signatureBase64:    formData.get('signatureBase64') ?? undefined,
       signatureImageMime: formData.get('signatureImageMime') ?? undefined,
+      inReplyTo:          formData.get('inReplyTo') ?? undefined,
+      references:         formData.get('references') ?? undefined,
     };
 
     const parsed = sendEmailSchema.safeParse(rawFields);
@@ -99,7 +105,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const { companyId, to, toName, subject, body, cc: ccRaw, attachmentName, signatureBase64, signatureImageMime } = parsed.data;
+    const { companyId, to, toName, subject, body, cc: ccRaw, attachmentName, signatureBase64, signatureImageMime, inReplyTo, references } = parsed.data;
     const attachment = formData.get('attachment') as Blob | null;
 
     // Obtener config de la empresa
@@ -173,9 +179,13 @@ export async function POST(request: NextRequest) {
       text: body,   // fallback para clientes que no soportan HTML
       html: htmlBody,
       attachments,
+      // Si no hay hilo al que responder, estos encabezados no se mandan y el
+      // mail abre una conversación nueva.
+      ...(inReplyTo && { inReplyTo }),
+      ...(references && { references }),
     });
 
-    log.info('Email sent', { companyId, to, subject, messageId: info.messageId });
+    log.info('Email sent', { companyId, to, subject, messageId: info.messageId, threaded: Boolean(inReplyTo) });
     return NextResponse.json({ success: true, messageId: info.messageId });
 
   } catch (error) {

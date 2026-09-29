@@ -41,6 +41,10 @@ interface SyncOptions {
   driveWebViewLink?: string;
   fileName?: string;
   fileFormat?: 'pdf' | 'docx';
+  /** Hilo al que se respondió, para que los reenvíos caigan en la misma conversación. */
+  emailThreadId?: string;
+  emailMessageId?: string;
+  emailReferences?: string;
 }
 
 /**
@@ -60,6 +64,9 @@ export async function syncSentBudgetToDb(
     driveWebViewLink: opts.driveWebViewLink,
     fileName: opts.fileName,
     fileFormat: opts.fileFormat,
+    emailThreadId: opts.emailThreadId,
+    emailMessageId: opts.emailMessageId,
+    emailReferences: opts.emailReferences,
   };
   const res = await fetch('/api/budgets', {
     method: 'POST',

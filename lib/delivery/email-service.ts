@@ -8,7 +8,8 @@
  * No requiere verificación de dominio ni servicios de pago.
  */
 
-import type { EmailPayload, EmailSendResult } from '@/types/delivery';
+import type { EmailPayload, EmailSendResult, EmailThreadRef } from '@/types/delivery';
+import { buildReplyHeaders } from './email-thread';
 
 export interface EmailConfig {
   companyId?: string;
@@ -103,7 +104,9 @@ export async function sendBudgetEmail(
   attachment: { name: string; content: Blob },
   ccEmails?: string[],
   companyId?: string,
-  signatureImage?: { base64: string; mime: string }
+  signatureImage?: { base64: string; mime: string },
+  /** Mail original al que se responde. Sin esto sale como conversación nueva. */
+  thread?: EmailThreadRef
 ): Promise<EmailSendResult> {
   const form = new FormData();
 
@@ -122,6 +125,13 @@ export async function sendBudgetEmail(
   if (signatureImage) {
     form.append('signatureBase64', signatureImage.base64);
     form.append('signatureImageMime', signatureImage.mime);
+  }
+
+  // Encabezados de hilo (opcionales)
+  if (thread) {
+    const { inReplyTo, references } = buildReplyHeaders(thread);
+    form.append('inReplyTo', inReplyTo);
+    form.append('references', references);
   }
 
   try {

@@ -46,6 +46,22 @@ export interface EmailRecipient {
   name?: string;
 }
 
+/**
+ * Ancla al hilo donde el cliente pidió el presupuesto. Es opcional: cuando el
+ * pedido llega por teléfono o WhatsApp el mail sale como una conversación nueva
+ * y no se manda ninguno de estos encabezados.
+ */
+export interface EmailThreadRef {
+  /** Message-ID RFC 5322 del mail al que se responde, con los `<>`. */
+  messageId: string;
+  /** Cadena `References` del padre: los IDs de sus ancestros, separados por espacio. */
+  references?: string;
+  /** Asunto original, ya sin el `Re:`, para rearmarlo al responder. */
+  subject?: string;
+  /** threadId de Gmail / conversationId de Outlook. Opaco, se guarda para la fase 2. */
+  threadId?: string;
+}
+
 export interface EmailPayload {
   to: EmailRecipient[];
   cc?: EmailRecipient[];
@@ -83,6 +99,8 @@ export interface DeliverySettings {
   // Optional file attached alongside the email signature (e.g. logo/banner).
   // Blob used at send time; fileName for display.
   emailSignatureAttachment?: { fileName: string; file: Blob };
+  // Mail del cliente al que se responde. Sin esto el envío es una conversación nueva.
+  emailThread?: EmailThreadRef;
 }
 
 export interface DeliveryWorkflowState {
