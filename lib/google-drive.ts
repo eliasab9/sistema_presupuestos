@@ -272,8 +272,8 @@ export async function ensureFolderPath(
 
 /**
  * Main function to upload a budget PDF to Google Drive
- * - Receives the budget object, PDF blob, and target folder path
- * - Creates folder structure if needed (Year/Client)
+ * - Receives the budget object, PDF blob, and an optional subfolder path
+ * - Sin folderPath el archivo va directo a la carpeta de la empresa
  * - Uses the company's root folder ID from COMPANIES config
  */
 export async function uploadBudgetToDrive(
@@ -301,13 +301,10 @@ export async function uploadBudgetToDrive(
     // Use company's Drive folder ID as root
     const rootFolderId = company.driveFolderId;
     
-    // Build folder path: Year/ClientName (or use custom folderPath)
-    const year = new Date().getFullYear().toString();
-    const clientName = budget.customer.name || 'Sin Cliente';
-    const targetPath = folderPath || `${year}/${clientName}`;
-    
-    // Ensure folder structure exists and get final folder ID
-    const targetFolderId = await ensureFolderPath(accessToken, targetPath, rootFolderId);
+    // Sin ruta explícita el archivo queda en la carpeta de la empresa.
+    const targetFolderId = folderPath
+      ? await ensureFolderPath(accessToken, folderPath, rootFolderId)
+      : rootFolderId;
     
     // Build filename: Presupuesto_[numero]_[cliente]_[fecha].pdf
     const safeClientName = (budget.customer.name || 'SinCliente').replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]/g, '_');
@@ -328,15 +325,4 @@ export async function uploadBudgetToDrive(
       error: error instanceof Error ? error.message : 'Error al subir presupuesto',
     };
   }
-}
-
-/**
- * Build the default folder path for a budget
- */
-export function buildBudgetFolderPath(budget: {
-  customer: { name: string };
-}): string {
-  const year = new Date().getFullYear().toString();
-  const clientName = budget.customer.name || 'Sin Cliente';
-  return `${year}/${clientName}`;
 }

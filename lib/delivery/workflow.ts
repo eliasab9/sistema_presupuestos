@@ -222,30 +222,18 @@ export async function runDeliveryWorkflow(
         const company = COMPANIES[budget.companyId];
         const rootFolderId = settings.driveDestination.rootFolder || company.driveFolderId;
 
-        // Build subfolder path
-        const subfolders: string[] = [];
-        if (settings.driveDestination.yearSubfolder) {
-          subfolders.push(new Date().getFullYear().toString());
-        }
-        if (settings.driveDestination.clientSubfolder && budget.customer.name) {
-          subfolders.push(budget.customer.name);
-        }
-        const folderPath = subfolders.join('/');
-        
-        // Upload file via API route (handles folder creation internally)
+        // El archivo va directo a la carpeta configurada, sin subcarpetas.
         const uploadResult = await uploadFileToDrive(
           state.generatedFile!.blob,
           settings.fileName,
-          rootFolderId,
-          folderPath
+          rootFolderId
         );
-        
+
         state.driveResult = uploadResult;
-        
+
         // Build display path for user
         const displayPath = [
           settings.driveDestination.rootFolderName || `Presupuestos ${company.name}`,
-          ...subfolders,
           settings.fileName,
         ].join('/');
         
@@ -420,21 +408,10 @@ export async function retryWorkflowStep(
     const company = COMPANIES[budget.companyId];
     const rootFolderId = settings.driveDestination.rootFolder || company.driveFolderId;
 
-    // Build subfolder path
-    const subfolders: string[] = [];
-    if (settings.driveDestination.yearSubfolder) {
-      subfolders.push(new Date().getFullYear().toString());
-    }
-    if (settings.driveDestination.clientSubfolder && budget.customer.name) {
-      subfolders.push(budget.customer.name);
-    }
-    const folderPath = subfolders.join('/');
-
     const result = await uploadFileToDrive(
       generatedFile.blob,
       settings.fileName,
-      rootFolderId,
-      folderPath
+      rootFolderId
     );
     return { success: result.success, error: result.error };
   }

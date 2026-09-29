@@ -43,6 +43,9 @@ export function WorkItemsSection() {
   const [loadingChips, setLoadingChips] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [filter, setFilter] = useState('');
+  // Escenarios propios: se arman con los trabajos ya tildados.
+  const [customScenarios, setCustomScenarios] = useState<WorkScenario[]>([]);
+  const [newScenarioName, setNewScenarioName] = useState<string | null>(null);
 
   const selectedDescriptions = new Set(workItems.map(w => w.description));
 
@@ -96,9 +99,52 @@ export function WorkItemsSection() {
   // Así están disponibles para cualquier equipo del presupuesto y en las dos
   // empresas; los trabajos que no figuren como chip igual se ven en "Orden en el
   // presupuesto" y se pueden quitar de ahí.
-  const scenarios: WorkScenario[] = equipmentType
+  const catalogScenarios: WorkScenario[] = equipmentType
     ? WORK_SCENARIOS_BY_EQUIPMENT_TYPE[equipmentType] ?? []
     : [];
+
+  // Los escenarios propios se guardan por empresa y tipo de equipo, así cada
+  // combinación aparece sólo donde tiene sentido.
+  const scenariosStorageKey = `bemec_scenarios:${companyId}:${equipmentType}`;
+
+  useEffect(() => {
+    if (!equipmentType) {
+      setCustomScenarios([]);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(`bemec_scenarios:${companyId}:${equipmentType}`);
+      setCustomScenarios(raw ? JSON.parse(raw) : []);
+    } catch {
+      setCustomScenarios([]);
+    }
+    setNewScenarioName(null);
+  }, [companyId, equipmentType]);
+
+  const persistCustomScenarios = (next: WorkScenario[]) => {
+    setCustomScenarios(next);
+    localStorage.setItem(scenariosStorageKey, JSON.stringify(next));
+  };
+
+  const handleSaveScenario = () => {
+    const label = (newScenarioName ?? '').trim();
+    if (!label || workItems.length === 0) return;
+    const scenario: WorkScenario = {
+      id: `custom:${crypto.randomUUID()}`,
+      label,
+      items: workItems.map(w => w.description),
+    };
+    // Mismo nombre = se pisa, para poder corregir uno sin acumular duplicados.
+    persistCustomScenarios([...customScenarios.filter(s => s.label !== label), scenario]);
+    setNewScenarioName(null);
+  };
+
+  const handleDeleteScenario = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    persistCustomScenarios(customScenarios.filter(s => s.id !== id));
+  };
+
+  const scenarios: WorkScenario[] = [...catalogScenarios, ...customScenarios];
 
   const activeScenarioId = scenarios.find(s =>
     s.items.length === workItems.length && s.items.every(d => selectedDescriptions.has(d))
@@ -213,37 +259,97 @@ export function WorkItemsSection() {
           </p>
         ) : (
           <div className="space-y-2">
-            {scenarios.length > 0 && (
-              <div className="space-y-1.5 pb-1">
-                <div className="flex items-baseline gap-1.5">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Escenarios
-                  </p>
-                  <span className="text-[11px] text-muted-foreground/70">
-                    — cargan varios trabajos de una vez
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {scenarios.map((scenario) => {
-                    const isActive = activeScenarioId === scenario.id;
-                    return (
-                      <Button
-                        key={scenario.id}
-                        type="button"
-                        size="sm"
-                        variant={isActive ? 'default' : 'outline'}
-                        className="h-7 px-2.5 text-xs font-normal"
-                        onClick={() => handleApplyScenario(scenario)}
-                        title={scenario.items.join('\n')}
-                      >
-                        {scenario.label}
-                        <span className="ml-1.5 opacity-60 tabular-nums">{scenario.items.length}</span>
-                      </Button>
-                    );
-                  })}
-                </div>
+            <div className="space-y-1.5 pb-1">
+              <div className="flex items-baseline gap-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Escenarios
+                </p>
+                <span className="text-[11px] text-muted-foreground/70">
+                  — cargan varios trabajos de una vez
+                </span>
               </div>
-            )}
+              <div className="flex flex-wrap gap-1.5">
+                {scenarios.map((scenario) => {
+                  const isActive = activeScenarioId === scenario.id;
+                  const isCustom = scenario.id.startsWith('custom:');
+                  return (
+                    <Button
+                      key={scenario.id}
+                      type="button"
+                      size="sm"
+                      variant={isActive ? 'default' : 'outline'}
+                      className="h-7 px-2.5 text-xs font-normal"
+                      onClick={() => handleApplyScenario(scenario)}
+                      title={scenario.items.join('\n')}
+                    >
+                      {scenario.label}
+                      <span className="ml-1.5 opacity-60 tabular-nums">{scenario.items.length}</span>
+                      {isCustom && (
+                        <span
+                          role="button"
+                          aria-label={`Borrar escenario ${scenario.label}`}
+                          onClick={(e) => handleDeleteScenario(e, scenario.id)}
+                          className="ml-1 -mr-1 p-0.5 opacity-50 hover:opacity-100 hover:text-destructive"
+                        >
+                          <X className="h-3 w-3" />
+                        </span>
+                      )}
+                    </Button>
+                  );
+                })}
+
+                {newScenarioName === null ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2.5 text-xs font-normal text-muted-foreground"
+                    onClick={() => setNewScenarioName('')}
+                    disabled={workItems.length === 0}
+                    title={
+                      workItems.length === 0
+                        ? 'Tildá primero los trabajos que querés guardar'
+                        : 'Guardar los trabajos tildados como escenario'
+                    }
+                  >
+                    <Plus className="h-3 w-3" />
+                    Guardar escenario
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <Input
+                      autoFocus
+                      value={newScenarioName}
+                      onChange={(e) => setNewScenarioName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveScenario();
+                        if (e.key === 'Escape') setNewScenarioName(null);
+                      }}
+                      placeholder={`Nombre — ${workItems.length} trabajos`}
+                      className="h-7 w-56 text-xs"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-7 px-2.5 text-xs font-normal"
+                      onClick={handleSaveScenario}
+                      disabled={!newScenarioName.trim()}
+                    >
+                      Guardar
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs font-normal text-muted-foreground"
+                      onClick={() => setNewScenarioName(null)}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="flex items-baseline gap-1.5">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

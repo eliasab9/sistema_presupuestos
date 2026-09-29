@@ -71,14 +71,12 @@ export function useGoogleDrive() {
       const company = COMPANIES[budget.companyId];
       const date    = budget.meta.date.replace(/\//g, '-');
       const defaultFileName   = `Presupuesto_${company.name}_${budget.meta.number}_${date}.pdf`;
-      const year              = new Date().getFullYear().toString();
-      const clientName        = budget.customer.name || 'Sin Cliente';
-      const defaultFolderPath = `${year}/${clientName}`;
 
+      // Sin folderPath el archivo queda directo en la carpeta de la empresa.
       const formData = new FormData();
       formData.append('file',          pdfBlob);
       formData.append('fileName',      options?.fileName   || defaultFileName);
-      formData.append('folderPath',    options?.folderPath || defaultFolderPath);
+      formData.append('folderPath',    options?.folderPath || '');
       formData.append('rootFolderId',  company.driveFolderId);
       formData.append('mimeType',      'application/pdf');
 

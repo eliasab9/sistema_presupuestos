@@ -145,6 +145,9 @@ export interface LaborItem {
   laborType?: LaborWorkType;
   // El vendedor editó el precio a mano: el recálculo respeta su valor.
   priceOverridden?: boolean;
+  // Idem con el texto: si no lo tocó, el recálculo reescribe la descripción
+  // para que la potencia que se lee sea la del equipo actual.
+  descriptionOverridden?: boolean;
   notes?: string;
 }
 

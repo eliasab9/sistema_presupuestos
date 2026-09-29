@@ -23,8 +23,6 @@ function makeDestination(overrides: Partial<DriveDestination> = {}): DriveDestin
   return {
     rootFolder: '',
     rootFolderName: '',
-    yearSubfolder: false,
-    clientSubfolder: false,
     customPath: '',
     createIfNotExists: true,
     ...overrides,
@@ -149,28 +147,21 @@ describe('buildDrivePath', () => {
     vi.useRealTimers();
   });
 
-  it('returns root folder name when no subfolders', () => {
+  it('devuelve la carpeta configurada', () => {
     const budget = makeBudget();
     const dest = makeDestination({ rootFolder: 'Presupuestos BEMEC' });
     expect(buildDrivePath(budget, dest)).toBe('Presupuestos BEMEC');
   });
 
-  it('appends year subfolder when enabled', () => {
+  it('no arma subcarpetas por año ni por cliente', () => {
+    const budget = makeBudget({ customerName: 'ACME Corp' });
+    const dest = makeDestination({ rootFolder: 'Root' });
+    expect(buildDrivePath(budget, dest)).toBe('Root');
+  });
+
+  it('cae al nombre por defecto de la empresa sin carpeta configurada', () => {
     const budget = makeBudget();
-    const dest = makeDestination({ rootFolder: 'Root', yearSubfolder: true });
-    expect(buildDrivePath(budget, dest)).toBe('Root/2026');
-  });
-
-  it('appends client subfolder when enabled', () => {
-    const budget = makeBudget({ customerName: 'ACME Corp' });
-    const dest = makeDestination({ rootFolder: 'Root', clientSubfolder: true });
-    expect(buildDrivePath(budget, dest)).toBe('Root/ACME_Corp');
-  });
-
-  it('appends both year and client subfolders in order', () => {
-    const budget = makeBudget({ customerName: 'ACME Corp' });
-    const dest = makeDestination({ rootFolder: 'Root', yearSubfolder: true, clientSubfolder: true });
-    expect(buildDrivePath(budget, dest)).toBe('Root/2026/ACME_Corp');
+    expect(buildDrivePath(budget, makeDestination())).toBe('Presupuestos BEMEC');
   });
 
   it('uses customPath when provided', () => {

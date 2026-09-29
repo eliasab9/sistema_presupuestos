@@ -64,33 +64,15 @@ export function buildDrivePath(
   budget: Budget,
   destination: DriveDestination
 ): string {
-  const pathParts: string[] = [];
-  
-  // Root folder (use company-specific folder)
-  const company = COMPANIES[budget.companyId];
-  const rootFolder = destination.rootFolder || `Presupuestos ${company.name}`;
-  pathParts.push(rootFolder);
-  
-  // Year subfolder
-  if (destination.yearSubfolder) {
-    const year = budget.meta.date 
-      ? new Date(budget.meta.date).getFullYear().toString()
-      : new Date().getFullYear().toString();
-    pathParts.push(year);
-  }
-  
-  // Client subfolder
-  if (destination.clientSubfolder && budget.customer.name) {
-    const clientFolder = sanitizeForFileName(budget.customer.name);
-    pathParts.push(clientFolder);
-  }
-  
   // Custom path override
   if (destination.customPath) {
     return destination.customPath;
   }
-  
-  return pathParts.join('/');
+
+  // El archivo va directo a la carpeta configurada: no se arman subcarpetas
+  // por año ni por cliente.
+  const company = COMPANIES[budget.companyId];
+  return destination.rootFolder || `Presupuestos ${company.name}`;
 }
 
 /**

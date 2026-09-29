@@ -5,7 +5,6 @@ import { useBudget } from '@/lib/budget-context';
 import { formatARS, formatUSD, calculateIvaBreakdown } from '@/lib/pricing/calculations';
 import { EQUIPMENT_TYPE_LABELS, COMPANIES } from '@/types/budget';
 import type { RepairSection } from '@/types/budget';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
 const DOC_WIDTH_PX = 794; // 210mm at 96dpi
@@ -235,8 +234,11 @@ export function BudgetPreview() {
         </button>
       </div>
 
-      <ScrollArea className="flex-1 bg-neutral-200">
-        <div className="p-3">
+      {/* Scroll nativo en los dos ejes: el ScrollArea de Radix sólo monta la
+          barra vertical y, al ampliar el zoom, la hoja quedaba recortada a los
+          costados sin forma de llegar al resto del documento. */}
+      <div className="flex-1 overflow-auto bg-neutral-200">
+        <div className="p-3 w-fit min-w-full">
           {/* Wrapper sized to visual (scaled) document dimensions — prevents layout overflow */}
           <div style={{ width: scaledW, height: scaledH, margin: '0 auto', overflow: 'hidden' }}>
             <div
@@ -435,7 +437,7 @@ export function BudgetPreview() {
             </div>
           </div>
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

@@ -260,11 +260,8 @@ export function NewEquipmentDeliveryPanel() {
     }
   };
 
-  const drivePath = [
-    settings.driveDestination.rootFolderName || `Presupuestos ${company.name}`,
-    ...(settings.driveDestination.yearSubfolder ? [new Date().getFullYear().toString()] : []),
-    ...(settings.driveDestination.clientSubfolder && budget.customer.name ? [budget.customer.name] : []),
-  ].join('/');
+  // El presupuesto se guarda directo en la carpeta configurada.
+  const drivePath = settings.driveDestination.rootFolderName || `Presupuestos ${company.name}`;
 
   return (
     <Card className="border-2">
@@ -322,16 +319,6 @@ export function NewEquipmentDeliveryPanel() {
               </a>
             </div>
             <Label className="text-xs text-muted-foreground">Carpeta raíz: {settings.driveDestination.rootFolderName || `Presupuestos ${company.name}`}</Label>
-            <div className="flex flex-wrap gap-4">
-              <div className="flex items-center gap-2">
-                <Switch id="ne-yearSubfolder" checked={settings.driveDestination.yearSubfolder} onCheckedChange={(v) => setSettings(prev => ({ ...prev, driveDestination: { ...prev.driveDestination, yearSubfolder: v } }))} disabled={isRunning} />
-                <Label htmlFor="ne-yearSubfolder" className="text-sm cursor-pointer">Subcarpeta por año</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch id="ne-clientSubfolder" checked={settings.driveDestination.clientSubfolder} onCheckedChange={(v) => setSettings(prev => ({ ...prev, driveDestination: { ...prev.driveDestination, clientSubfolder: v } }))} disabled={isRunning} />
-                <Label htmlFor="ne-clientSubfolder" className="text-sm cursor-pointer">Subcarpeta por cliente</Label>
-              </div>
-            </div>
             <div className="text-xs text-muted-foreground flex items-center gap-1">
               <span>Ruta:</span>
               <code className="bg-muted px-1 py-0.5 rounded">{drivePath}/{settings.fileName}</code>

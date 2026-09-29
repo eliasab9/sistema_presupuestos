@@ -209,6 +209,12 @@ export function detectLaborType(description: string): LaborWorkType | null {
   return null;
 }
 
+const MAINTENANCE_TYPES: LaborWorkType[] = [
+  'motor_maintenance',
+  'pump_maintenance',
+  'reducer_maintenance',
+];
+
 const LABOR_TYPE_DESCRIPTIONS: Record<LaborWorkType, (powerHP: number) => string> = {
   winding:             (hp) => `Fabricación de bobinado — motor ${hp} HP`,
   motor_maintenance:   (hp) => `Mantenimiento motor — ${hp} HP`,
@@ -226,28 +232,32 @@ export function generateSuggestedLabor(
   equipmentType: EquipmentType | '',
   powerHP: number
 ): LaborItem[] {
-  const labor: LaborItem[] = [];
-  const addedTypes = new Set<LaborWorkType>();
+  const detected: LaborWorkType[] = [];
 
   for (const item of workItems) {
     if (!item.affectsCalculation) continue;
-
     const laborType = detectLaborType(item.description);
-    if (!laborType || addedTypes.has(laborType)) continue;
-    addedTypes.add(laborType);
+    if (!laborType || detected.includes(laborType)) continue;
+    detected.push(laborType);
+  }
 
+  // La fabricación de bobinado ya incluye desarmar y armar el equipo: si el
+  // trabajo la contempla, el mantenimiento no se cobra aparte.
+  const types = detected.includes('winding')
+    ? detected.filter((t) => !MAINTENANCE_TYPES.includes(t))
+    : detected;
+
+  return types.map((laborType) => {
     const { priceARS, formula } = calculateLaborPrice(equipmentType, powerHP, laborType);
-    labor.push({
+    return {
       id: crypto.randomUUID(),
       description: LABOR_TYPE_DESCRIPTIONS[laborType](powerHP),
       priceARS,
       formula,
       isManual: false,
       laborType,
-    });
-  }
-
-  return labor;
+    };
+  });
 }
 
 /**
@@ -273,7 +283,10 @@ export function mergeSuggestedLabor(
     // y se respeta el precio con el que se cotizaron.
     const type = item.laborType ?? inferLaborTypeFromLabel(item.description);
     if (!type) continue;
-    previousByType.set(type, item.laborType ? item : { ...item, priceOverridden: true });
+    previousByType.set(
+      type,
+      item.laborType ? item : { ...item, priceOverridden: true, descriptionOverridden: true }
+    );
   }
 
   const merged = suggestions.map((suggestion) => {
@@ -282,7 +295,12 @@ export function mergeSuggestedLabor(
     return {
       ...suggestion,
       id: previous.id,
-      description: previous.description,
+      // La descripción sugerida lleva la potencia adentro ("Mantenimiento motor
+      // — 5.5 HP"): si se conserva siempre la anterior, al cambiar de potencia
+      // el precio se recalcula pero el texto sigue diciendo la vieja.
+      ...(previous.descriptionOverridden
+        ? { description: previous.description, descriptionOverridden: true }
+        : {}),
       ...(previous.priceOverridden
         ? { priceARS: previous.priceARS, priceOverridden: true }
         : {}),

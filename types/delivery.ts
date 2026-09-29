@@ -29,8 +29,6 @@ export interface GeneratedBudgetFile {
 export interface DriveDestination {
   rootFolder: string; // Google Drive folder ID
   rootFolderName?: string; // Display name for the folder
-  yearSubfolder: boolean;
-  clientSubfolder: boolean;
   customPath?: string;
   createIfNotExists: boolean;
 }
@@ -115,8 +113,6 @@ export interface DeliveryWorkflowResult {
 // Default settings
 export const DEFAULT_DRIVE_DESTINATION: DriveDestination = {
   rootFolder: 'Presupuestos BEMEC',
-  yearSubfolder: true,
-  clientSubfolder: true,
   createIfNotExists: true,
 };
 

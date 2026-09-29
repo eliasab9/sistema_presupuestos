@@ -25,6 +25,7 @@ const COMMON_SPARE_PARTS = [
   { id: 'fan_cover', description: 'Cubre ventilador', defaultPriceUSD: 5 },
   { id: 'rear_cover', description: 'Tapa trasera', defaultPriceUSD: 10 },
   { id: 'fan', description: 'Ventilador', defaultPriceUSD: 3 },
+  { id: 'impeller', description: 'Impulsor', defaultPriceUSD: 0 },
   { id: 'other', description: 'Otro repuesto', defaultPriceUSD: 0 },
 ];
 

@@ -309,19 +309,8 @@ export function DeliveryPanel() {
     }
   };
 
-  // Build display path for Drive
-  const buildDisplayPath = () => {
-    const parts = [settings.driveDestination.rootFolderName || `Presupuestos ${company.name}`];
-    if (settings.driveDestination.yearSubfolder) {
-      parts.push(new Date().getFullYear().toString());
-    }
-    if (settings.driveDestination.clientSubfolder && budget.customer.name) {
-      parts.push(budget.customer.name);
-    }
-    return parts.join('/');
-  };
-  
-  const drivePath = buildDisplayPath();
+  // El presupuesto se guarda directo en la carpeta configurada.
+  const drivePath = settings.driveDestination.rootFolderName || `Presupuestos ${company.name}`;
   
   return (
     <Card className="border-2">
@@ -423,32 +412,6 @@ export function DeliveryPanel() {
             </div>
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground">Carpeta raíz: {settings.driveDestination.rootFolderName || `Presupuestos ${company.name}`}</Label>
-            </div>
-            <div className="flex flex-wrap gap-4">
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="yearSubfolder"
-                  checked={settings.driveDestination.yearSubfolder}
-                  onCheckedChange={(checked) => setSettings(prev => ({
-                    ...prev,
-                    driveDestination: { ...prev.driveDestination, yearSubfolder: checked }
-                  }))}
-                  disabled={isRunning}
-                />
-                <Label htmlFor="yearSubfolder" className="text-sm cursor-pointer">Subcarpeta por año</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="clientSubfolder"
-                  checked={settings.driveDestination.clientSubfolder}
-                  onCheckedChange={(checked) => setSettings(prev => ({
-                    ...prev,
-                    driveDestination: { ...prev.driveDestination, clientSubfolder: checked }
-                  }))}
-                  disabled={isRunning}
-                />
-                <Label htmlFor="clientSubfolder" className="text-sm cursor-pointer">Subcarpeta por cliente</Label>
-              </div>
             </div>
             <div className="text-xs text-muted-foreground flex items-center gap-1">
               <span>Ruta:</span>

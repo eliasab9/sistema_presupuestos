@@ -37,13 +37,18 @@ describe('generateSuggestedLabor', () => {
     expect(items.map(i => i.laborType)).toEqual(['motor_maintenance']);
   });
 
-  it('agrega bobinado y mantenimiento sólo si ambos están seleccionados', () => {
+  it('no cobra mantenimiento aparte cuando hay fabricación de bobinado', () => {
     const items = generateSuggestedLabor(
       [work('Desarme general del motor eléctrico.'), work('Fabricación de bobinado nuevo del motor.')],
       'motor_electrico',
       5
     );
-    expect(items.map(i => i.laborType).sort()).toEqual(['motor_maintenance', 'winding']);
+    expect(items.map(i => i.laborType)).toEqual(['winding']);
+  });
+
+  it('escribe la potencia del equipo en la descripción', () => {
+    const items = generateSuggestedLabor([work('Desarme general del motor eléctrico.')], 'motor_electrico', 5.5);
+    expect(items[0].description).toBe('Mantenimiento motor — 5.5 HP');
   });
 });
 
@@ -63,6 +68,28 @@ describe('mergeSuggestedLabor', () => {
     const merged = mergeSuggestedLabor([edited], [suggestion('winding', 100)]);
     expect(merged).toHaveLength(1);
     expect(merged[0].priceARS).toBe(999);
+  });
+
+  it('reescribe la descripción al cambiar de potencia', () => {
+    const previous: LaborItem = {
+      id: 'x', description: 'Mantenimiento motor — 1 HP', priceARS: 100,
+      isManual: false, laborType: 'motor_maintenance',
+    };
+    const nueva = { ...previous, id: 'new', description: 'Mantenimiento motor — 5.5 HP', priceARS: 200 };
+    const merged = mergeSuggestedLabor([previous], [nueva]);
+    expect(merged[0].description).toBe('Mantenimiento motor — 5.5 HP');
+    expect(merged[0].priceARS).toBe(200);
+  });
+
+  it('respeta la descripción que el vendedor editó a mano', () => {
+    const previous: LaborItem = {
+      id: 'x', description: 'Mantenimiento a convenir', priceARS: 100,
+      isManual: false, laborType: 'motor_maintenance', descriptionOverridden: true,
+    };
+    const nueva = { ...previous, id: 'new', description: 'Mantenimiento motor — 5.5 HP', priceARS: 200 };
+    const merged = mergeSuggestedLabor([previous], [nueva]);
+    expect(merged[0].description).toBe('Mantenimiento a convenir');
+    expect(merged[0].priceARS).toBe(200);
   });
 
   it('conserva los ítems manuales y saca los sugeridos que ya no aplican', () => {

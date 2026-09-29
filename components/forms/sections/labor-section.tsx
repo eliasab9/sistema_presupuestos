@@ -83,7 +83,7 @@ export function LaborSection() {
                 <div className="flex-1 space-y-1">
                   <Input
                     value={item.description}
-                    onChange={(e) => updateLabor(item.id, { description: e.target.value })}
+                    onChange={(e) => updateLabor(item.id, { description: e.target.value, descriptionOverridden: true })}
                     className="h-8 text-sm font-medium"
                   />
                   {item.formula && (
