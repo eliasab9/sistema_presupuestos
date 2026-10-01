@@ -8,6 +8,8 @@
  * Layout de la planilla:
  *   A = Nº de solicitud  → se escribe al RESERVAR
  *   B = Fecha de solicitud → se escribe al REGISTRAR (envío efectivo)
+ *
+ * La fecha es el marcador de "fila usada": sin ella la fila vuelve al pozo.
  */
 
 export const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
@@ -53,27 +55,62 @@ export interface BudgetSlot {
   number: string;
 }
 
+const NUMERIC = /^\d+$/;
+
+function cell(rows: string[][], row: number, col: number): string {
+  return rows[row]?.[col]?.trim() ?? '';
+}
+
+/**
+ * Índice de la primera fila de datos: la primera cuyo A es un número.
+ *
+ * El encabezado ocupa varias filas (logo, subtítulo, títulos de columna) y no
+ * siempre las mismas, así que anclarse en "la fila 2" no sirve.
+ */
+function firstDataIndex(rows: string[][]): number {
+  for (let i = 0; i < rows.length; i++) {
+    if (NUMERIC.test(cell(rows, i, 0))) return i;
+  }
+  return rows.length;
+}
+
 /**
  * Encuentra el próximo slot libre.
  *
- * Una fila está tomada apenas A o B tienen algo. Mirar sólo B (como se hacía
- * antes) hacía que la reserva no reservara nada: escribía en A pero seguía
- * buscando por B, así que dos pedidos concurrentes recibían el mismo número.
+ * Una fila cuenta como usada cuando tiene FECHA (columna B): es lo que escribe
+ * el registro al enviar. Una fila con número en A pero sin fecha es una reserva
+ * que nunca llegó a enviarse (falló la generación del archivo, se cerró la
+ * pestaña, etc.) y hay que reutilizarla: tratarla como ocupada quemaba el número
+ * para siempre y empujaba los presupuestos nuevos abajo del hueco.
+ *
+ * El número del slot es el que ya está en A si lo hay, así se respeta la reserva
+ * previa en vez de inventar uno nuevo.
+ *
+ * La reserva sigue escribiendo A para acortar la ventana entre leer y registrar,
+ * pero ya no la bloquea: el margen de colisión es el que va de la lectura a la
+ * escritura dentro del mismo pedido.
  */
 export function findNextBudgetSlot(rows: string[][]): BudgetSlot {
-  let lastTakenIndex = 0;
-  for (let i = 1; i < rows.length; i++) {
-    const colA = rows[i]?.[0]?.trim() ?? '';
-    const colB = rows[i]?.[1]?.trim() ?? '';
-    if (colA !== '' || colB !== '') lastTakenIndex = i;
+  const start = firstDataIndex(rows);
+
+  let highest = 0;
+  let index = -1;
+
+  for (let i = start; i < rows.length; i++) {
+    const colA = cell(rows, i, 0);
+    if (NUMERIC.test(colA)) highest = Math.max(highest, parseInt(colA, 10));
+    if (index === -1 && cell(rows, i, 1) === '') index = i;
   }
 
-  const index = lastTakenIndex + 1;
-  const lastNumber = parseInt(rows[lastTakenIndex]?.[0]?.trim() ?? '', 10);
+  // Sin huecos: se agrega al final. El mínimo de 1 evita pisar el encabezado
+  // cuando la API devuelve la hoja vacía.
+  if (index === -1) index = Math.max(rows.length, 1);
+
+  const reserved = cell(rows, index, 0);
 
   return {
     index,
     rowNumber: index + 1,
-    number: String(Number.isNaN(lastNumber) ? 1 : lastNumber + 1),
+    number: NUMERIC.test(reserved) ? reserved : String(highest + 1),
   };
 }

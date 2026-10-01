@@ -13,24 +13,57 @@ describe('findNextBudgetSlot', () => {
     expect(findNextBudgetSlot(rows)).toEqual({ index: 3, rowNumber: 4, number: '7143' });
   });
 
-  it('considera ocupada una fila que sólo tiene la columna A (reservada, sin registrar)', () => {
+  it('reutiliza una fila con número pero sin fecha (reserva que nunca se envió)', () => {
     const rows = [
       HEADER,
       ['7141', '01/08/2026'],
-      ['7142', ''], // reservada por otra sesión, todavía sin enviar
+      ['7142', ''], // se reservó y falló el envío: el número sigue disponible
     ];
-    // Sin esto dos sesiones concurrentes recibirían ambas el 7142.
-    expect(findNextBudgetSlot(rows).number).toBe('7143');
+    expect(findNextBudgetSlot(rows)).toEqual({ index: 2, rowNumber: 3, number: '7142' });
   });
 
-  it('salta varias filas reservadas consecutivas', () => {
+  it('toma la primera de varias reservas sin registrar, no la última', () => {
     const rows = [
       HEADER,
       ['7141', '01/08/2026'],
       ['7142', ''],
       ['7143', ''],
     ];
-    expect(findNextBudgetSlot(rows)).toEqual({ index: 4, rowNumber: 5, number: '7144' });
+    expect(findNextBudgetSlot(rows)).toEqual({ index: 2, rowNumber: 3, number: '7142' });
+  });
+
+  it('rellena el hueco aunque haya presupuestos registrados más abajo', () => {
+    // El caso real de las dos planillas: un bloque de números quemados y los
+    // envíos nuevos empujados abajo del hueco.
+    const rows = [
+      HEADER,
+      ['11291', '28/09/2026'],
+      ['11292', ''],
+      ['11293', ''],
+      ['11301', '29/09/2026'],
+      ['11302', '30/09/2026'],
+    ];
+    expect(findNextBudgetSlot(rows)).toEqual({ index: 2, rowNumber: 3, number: '11292' });
+  });
+
+  it('sigue por el número más alto cuando ya no quedan huecos', () => {
+    const rows = [
+      HEADER,
+      ['11291', '28/09/2026'],
+      ['11301', '29/09/2026'],
+    ];
+    expect(findNextBudgetSlot(rows)).toEqual({ index: 3, rowNumber: 4, number: '11302' });
+  });
+
+  it('saltea el encabezado de varias filas de la planilla real', () => {
+    const rows = [
+      [],                              // fila del logo
+      ['', ''],                        // subtítulo
+      ['SOLICITUD Nº', 'FECHA SOLICITUD'],
+      ['11291', '28/09/2026'],
+      ['', ''],
+    ];
+    expect(findNextBudgetSlot(rows)).toEqual({ index: 4, rowNumber: 5, number: '11292' });
   });
 
   it('ignora celdas con sólo espacios en blanco', () => {
@@ -44,7 +77,7 @@ describe('findNextBudgetSlot', () => {
 
   it('tolera filas cortas sin columna B', () => {
     const rows = [HEADER, ['7141', '01/08/2026'], ['7142']];
-    expect(findNextBudgetSlot(rows).number).toBe('7143');
+    expect(findNextBudgetSlot(rows)).toEqual({ index: 2, rowNumber: 3, number: '7142' });
   });
 
   it('arranca en 1 cuando la hoja sólo tiene encabezado', () => {
