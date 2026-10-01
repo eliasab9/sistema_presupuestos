@@ -4,6 +4,10 @@ import {
   generateSuggestedLabor,
   mergeSuggestedLabor,
   calculateIvaBreakdown,
+  resolveIvaMode,
+  IVA_CONDITION_REDUCED,
+  IVA_CONDITION_GENERAL,
+  IVA_CONDITION_SPLIT,
 } from '../calculations';
 import type { LaborItem } from '@/types/budget';
 
@@ -108,31 +112,85 @@ describe('mergeSuggestedLabor', () => {
   });
 });
 
-describe('calculateIvaBreakdown', () => {
-  it('manda el bobinado al 10,5% y el resto al 21%', () => {
-    const iva = calculateIvaBreakdown([
-      {
-        labor: [
-          { id: 'a', description: 'Bobinado', priceARS: 1000, isManual: false, laborType: 'winding' },
-          { id: 'b', description: 'Mantenimiento', priceARS: 500, isManual: false, laborType: 'motor_maintenance' },
-        ],
-        bearings: [{ subtotalARS: 300 } as never],
-        spareParts: [{ subtotalARS: 200 } as never],
-        machining: [],
-      },
-    ]);
+describe('resolveIvaMode', () => {
+  it('mapea cada chip a su modo', () => {
+    expect(resolveIvaMode(IVA_CONDITION_REDUCED)).toBe('reduced');
+    expect(resolveIvaMode(IVA_CONDITION_GENERAL)).toBe('general');
+    expect(resolveIvaMode(IVA_CONDITION_SPLIT)).toBe('split');
+  });
 
-    expect(iva.baseWinding).toBe(1000);
-    expect(iva.baseGeneral).toBe(1000);
-    expect(iva.ivaWinding).toBe(105);
-    expect(iva.ivaGeneral).toBe(210);
+  it('devuelve null sin chip elegido', () => {
+    expect(resolveIvaMode(undefined)).toBeNull();
+    expect(resolveIvaMode('')).toBeNull();
+  });
+
+  it('devuelve null con una condición escrita a mano', () => {
+    expect(resolveIvaMode('exento')).toBeNull();
+    expect(resolveIvaMode('10,5% sobre todo menos repuestos')).toBeNull();
+  });
+});
+
+describe('calculateIvaBreakdown', () => {
+  // 1000 de bobinado + 500 de mantenimiento + 300 + 200 = 2000 netos
+  const sections = [
+    {
+      labor: [
+        { id: 'a', description: 'Bobinado', priceARS: 1000, isManual: false, laborType: 'winding' as const },
+        { id: 'b', description: 'Mantenimiento', priceARS: 500, isManual: false, laborType: 'motor_maintenance' as const },
+      ],
+      bearings: [{ subtotalARS: 300 } as never],
+      spareParts: [{ subtotalARS: 200 } as never],
+      machining: [],
+    },
+  ];
+
+  it('con "Ambos" manda el bobinado al 10,5% y el resto al 21%', () => {
+    const iva = calculateIvaBreakdown(sections, IVA_CONDITION_SPLIT)!;
+
+    expect(iva.lines).toHaveLength(2);
+    expect(iva.lines[0]).toMatchObject({ base: 1000, iva: 105 });
+    expect(iva.lines[1]).toMatchObject({ base: 1000, iva: 210 });
     expect(iva.net).toBe(2000);
+    expect(iva.ivaTotal).toBe(315);
     expect(iva.gross).toBe(2315);
   });
 
+  it('con "21%" grava todo al 21% en una sola fila', () => {
+    const iva = calculateIvaBreakdown(sections, IVA_CONDITION_GENERAL)!;
+
+    expect(iva.lines).toHaveLength(1);
+    expect(iva.lines[0]).toMatchObject({ base: 2000, iva: 420 });
+    expect(iva.gross).toBe(2420);
+  });
+
+  it('con "10,5%" grava todo al 10,5% en una sola fila', () => {
+    const iva = calculateIvaBreakdown(sections, IVA_CONDITION_REDUCED)!;
+
+    expect(iva.lines).toHaveLength(1);
+    expect(iva.lines[0]).toMatchObject({ base: 2000, iva: 210 });
+    expect(iva.gross).toBe(2210);
+  });
+
+  it('devuelve null sin condición elegida: no se inventa una alícuota', () => {
+    expect(calculateIvaBreakdown(sections, undefined)).toBeNull();
+    expect(calculateIvaBreakdown(sections, '')).toBeNull();
+    expect(calculateIvaBreakdown(sections, 'exento')).toBeNull();
+  });
+
   it('devuelve todo en cero con un presupuesto vacío', () => {
-    const iva = calculateIvaBreakdown([]);
+    const iva = calculateIvaBreakdown([], IVA_CONDITION_SPLIT)!;
     expect(iva.net).toBe(0);
     expect(iva.gross).toBe(0);
+  });
+});
+
+describe('detectLaborType — bobinado', () => {
+  it('reconoce "fabricación de bobina" igual que "de bobinado"', () => {
+    expect(detectLaborType('Fabricación de bobina')).toBe('winding');
+    expect(detectLaborType('Fabricación de bobinado')).toBe('winding');
+  });
+
+  it('no cobra bobinado por sólo nombrarlo', () => {
+    expect(detectLaborType('Limpieza de bobinado')).not.toBe('winding');
   });
 });

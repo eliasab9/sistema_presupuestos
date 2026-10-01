@@ -4,11 +4,18 @@ import { useBudget } from '@/lib/budget-context';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Receipt, CreditCard, CalendarClock } from 'lucide-react';
+import {
+  IVA_CONDITION_REDUCED,
+  IVA_CONDITION_GENERAL,
+  IVA_CONDITION_SPLIT,
+} from '@/lib/pricing/calculations';
 
+// El valor es a la vez el texto que se imprime y la clave que decide la
+// alícuota, así que tiene que coincidir exacto con las constantes.
 const IVA_OPTIONS = [
-  { value: '10,5%', label: '10,5%' },
-  { value: '21%', label: '21%' },
-  { value: '21% materiales y mantenimiento — 10,5% fabricación de bobinado', label: 'Ambos (10,5% + 21%)' },
+  { value: IVA_CONDITION_REDUCED, label: '10,5%' },
+  { value: IVA_CONDITION_GENERAL, label: '21%' },
+  { value: IVA_CONDITION_SPLIT, label: 'Ambos (10,5% + 21%)' },
 ];
 
 const PAYMENT_OPTIONS = [

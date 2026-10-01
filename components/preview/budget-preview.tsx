@@ -193,7 +193,7 @@ export function BudgetPreview() {
 
   const grandTotal = perSectionTotals.reduce((sum, t) => sum + t.labor + t.bearings + t.spareParts + t.machining, 0);
 
-  const iva = calculateIvaBreakdown(effectiveSections);
+  const iva = calculateIvaBreakdown(effectiveSections, meta.ivaCondition);
 
   const formatTotal = (amount: number) =>
     meta.currency === 'USD' && meta.exchangeRate > 0
@@ -367,7 +367,7 @@ export function BudgetPreview() {
 
               {/* Discriminación de IVA — el presupuesto se cotiza neto, esto es
                   sólo informativo para que el cliente sepa qué alícuota aplica. */}
-              {iva.net > 0 && (
+              {iva && iva.net > 0 && (
                 <section style={{ marginTop: '12px', marginBottom: '12px' }}>
                   <h3 style={{
                     fontSize: '10px', fontWeight: 700, color: primaryColor,
@@ -384,16 +384,13 @@ export function BudgetPreview() {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
-                        <td style={{ padding: '3px 0' }}>Fabricación de bobinado — 10,5%</td>
-                        <td style={{ textAlign: 'right', padding: '3px 0' }}>{formatTotal(iva.baseWinding)}</td>
-                        <td style={{ textAlign: 'right', padding: '3px 0' }}>{formatTotal(iva.ivaWinding)}</td>
-                      </tr>
-                      <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
-                        <td style={{ padding: '3px 0' }}>Materiales y mantenimiento — 21%</td>
-                        <td style={{ textAlign: 'right', padding: '3px 0' }}>{formatTotal(iva.baseGeneral)}</td>
-                        <td style={{ textAlign: 'right', padding: '3px 0' }}>{formatTotal(iva.ivaGeneral)}</td>
-                      </tr>
+                      {iva.lines.map((line) => (
+                        <tr key={line.label} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                          <td style={{ padding: '3px 0' }}>{line.label}</td>
+                          <td style={{ textAlign: 'right', padding: '3px 0' }}>{formatTotal(line.base)}</td>
+                          <td style={{ textAlign: 'right', padding: '3px 0' }}>{formatTotal(line.iva)}</td>
+                        </tr>
+                      ))}
                       <tr style={{ fontWeight: 700, color: '#333' }}>
                         <td style={{ padding: '4px 0' }}>Total con IVA</td>
                         <td style={{ textAlign: 'right', padding: '4px 0' }}>{formatTotal(iva.net)}</td>
@@ -415,7 +412,8 @@ export function BudgetPreview() {
                   Observaciones
                 </h3>
                 <div style={{ fontSize: '9px', color: '#555', lineHeight: 1.4 }}>
-                  <p style={{ margin: '2px 0' }}>• Precios expresados en pesos argentinos. IVA: {meta.ivaCondition || '21% materiales y mantenimiento — 10,5% fabricación de bobinado'}.</p>
+                  {/* Sin condición elegida no se inventa una alícuota. */}
+                  <p style={{ margin: '2px 0' }}>• Precios expresados en pesos argentinos{meta.ivaCondition ? `. IVA: ${meta.ivaCondition}` : ', netos de IVA'}.</p>
                   <p style={{ margin: '2px 0' }}>• TC utilizado: ${meta.exchangeRate.toLocaleString('es-AR')} / U$S (referencial). Validez: {meta.commercialValidity || '7 días hábiles'}. Pago: {meta.paymentTerms || 'A convenir'}.</p>
                   {meta.generalNotes && (
                     <p style={{ marginTop: '4px', whiteSpace: 'pre-line' }}>{meta.generalNotes}</p>

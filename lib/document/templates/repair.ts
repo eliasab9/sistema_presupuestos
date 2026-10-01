@@ -107,9 +107,24 @@ function buildSectionHtml(section: RepairSection, isOnly: boolean, primaryColor:
  * El presupuesto se cotiza neto: esto es informativo, no cambia el SUBTOTAL.
  * Devuelve '' si no hay nada cotizado.
  */
-function buildIvaBreakdownHtml(sections: RepairSection[], primaryColor: string): string {
-  const iva = calculateIvaBreakdown(sections);
-  if (iva.net <= 0) return '';
+function buildIvaBreakdownHtml(
+  sections: RepairSection[],
+  primaryColor: string,
+  ivaCondition: string | undefined
+): string {
+  const iva = calculateIvaBreakdown(sections, ivaCondition);
+  if (!iva || iva.net <= 0) return '';
+
+  const rows = iva.lines
+    .map(
+      (line) => `
+    <tr>
+      <td>${line.label}</td>
+      <td class="amount">${formatCurrency(line.base)}</td>
+      <td class="amount">${formatCurrency(line.iva)}</td>
+    </tr>`
+    )
+    .join('');
 
   return `
   <p class="section-title">DISCRIMINACIÓN DE IVA</p>
@@ -118,17 +133,7 @@ function buildIvaBreakdownHtml(sections: RepairSection[], primaryColor: string):
       <td>Concepto</td>
       <td class="amount">Neto</td>
       <td class="amount">IVA</td>
-    </tr>
-    <tr>
-      <td>Fabricación de bobinado — 10,5%</td>
-      <td class="amount">${formatCurrency(iva.baseWinding)}</td>
-      <td class="amount">${formatCurrency(iva.ivaWinding)}</td>
-    </tr>
-    <tr>
-      <td>Materiales y mantenimiento — 21%</td>
-      <td class="amount">${formatCurrency(iva.baseGeneral)}</td>
-      <td class="amount">${formatCurrency(iva.ivaGeneral)}</td>
-    </tr>
+    </tr>${rows}
     <tr>
       <td><b>Total con IVA</b></td>
       <td class="amount">${formatCurrency(iva.net)}</td>
@@ -220,12 +225,12 @@ export function buildRepairDocxDownloadHtml(budget: Budget, logoBase64: string):
     <table><tr><td class="total-label">SUBTOTAL</td><td class="total-amount">${formatCurrency(grandTotal)}</td></tr></table>
   </div>
 
-  ${buildIvaBreakdownHtml(sections, primaryColor)}
+  ${buildIvaBreakdownHtml(sections, primaryColor, meta.ivaCondition)}
 
   <h3>Observaciones</h3>
   <div class="observations">
     <ul>
-      <li>IVA: ${meta.ivaCondition || '21% materiales y mantenimiento — 10,5% fabricación de bobinado'}.</li>
+      <li>${meta.ivaCondition ? `IVA: ${meta.ivaCondition}` : 'Precios netos de IVA'}.</li>
       <li>Tipo de cambio utilizado: $${meta.exchangeRate.toLocaleString('es-AR')} / U$S (referencial a la fecha).</li>
       <li>Validez del presupuesto: ${meta.commercialValidity || '7 días hábiles'}.</li>
       <li>Forma de pago: ${meta.paymentTerms || 'A convenir'}.</li>
@@ -308,12 +313,12 @@ export function buildRepairDocxBlobHtml(budget: Budget, logoBase64: string): str
 
   <div class="total-row"><table><tr><td class="total-label">SUBTOTAL</td><td class="total-amount">${formatCurrency(grandTotal)}</td></tr></table></div>
 
-  ${buildIvaBreakdownHtml(sections, primaryColor)}
+  ${buildIvaBreakdownHtml(sections, primaryColor, meta.ivaCondition)}
 
   <h3>Observaciones</h3>
   <div class="observations">
     <ul>
-      <li>IVA: ${meta.ivaCondition || '21% materiales y mantenimiento — 10,5% fabricación de bobinado'}.</li>
+      <li>${meta.ivaCondition ? `IVA: ${meta.ivaCondition}` : 'Precios netos de IVA'}.</li>
       <li>Tipo de cambio utilizado: $${meta.exchangeRate.toLocaleString('es-AR')} / U$S.</li>
       <li>Validez: ${meta.commercialValidity || '7 días hábiles'}.</li>
       <li>Forma de pago: ${meta.paymentTerms || 'A convenir'}.</li>

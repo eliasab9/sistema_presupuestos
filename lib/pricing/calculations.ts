@@ -192,7 +192,8 @@ function normalize(text: string): string {
 export function detectLaborType(description: string): LaborWorkType | null {
   const desc = normalize(description);
 
-  if (/fabricacion de bobinado|fabricar bobinado|bobinado nuevo|rebobinad/.test(desc)) {
+  // "fabricación de bobina" y "de bobinado" son el mismo trabajo.
+  if (/fabricacion de bobina|fabricar bobina|bobinado nuevo|rebobinad/.test(desc)) {
     return 'winding';
   }
   if (desc.includes('balanceo')) return 'balancing';
@@ -313,7 +314,7 @@ export function mergeSuggestedLabor(
 /** Deduce el tipo desde la descripción que generó una versión anterior. */
 function inferLaborTypeFromLabel(description: string): LaborWorkType | null {
   const desc = normalize(description);
-  if (desc.startsWith('fabricacion de bobinado')) return 'winding';
+  if (desc.startsWith('fabricacion de bobina')) return 'winding';
   if (desc.startsWith('mantenimiento motor')) return 'motor_maintenance';
   if (desc.startsWith('mantenimiento bomba')) return 'pump_maintenance';
   if (desc.startsWith('mantenimiento reductor')) return 'reducer_maintenance';
@@ -323,19 +324,44 @@ function inferLaborTypeFromLabel(description: string): LaborWorkType | null {
 }
 
 // ── Discriminación de IVA ────────────────────────────────────────────────────
-// La fabricación de bobinado tributa al 10,5 % (trabajo sobre bien mueble);
-// materiales, repuestos, mecanizado y el resto de la mano de obra, al 21 %.
+// La alícuota la decide el usuario con los chips de Condiciones Comerciales.
+// Sin chip elegido no se discrimina nada: el presupuesto sale sólo con el neto.
 
 export const IVA_RATE_WINDING = 0.105;
 export const IVA_RATE_GENERAL = 0.21;
 
+/** Valores exactos de los chips de IVA. Son también el texto que se imprime. */
+export const IVA_CONDITION_REDUCED = '10,5%';
+export const IVA_CONDITION_GENERAL = '21%';
+export const IVA_CONDITION_SPLIT = '21% materiales y mantenimiento — 10,5% fabricación de bobinado';
+
+/** Cómo repartir el neto. `null` = el usuario no eligió, no se discrimina. */
+export type IvaMode = 'reduced' | 'general' | 'split';
+
+/**
+ * Traduce el chip elegido a un modo de cálculo. La comparación es exacta: si el
+ * usuario escribió una condición propia en el campo de texto no podemos deducir
+ * la alícuota, así que devolvemos `null` y el desglose no se muestra.
+ */
+export function resolveIvaMode(ivaCondition: string | undefined): IvaMode | null {
+  switch (ivaCondition?.trim()) {
+    case IVA_CONDITION_REDUCED: return 'reduced';
+    case IVA_CONDITION_GENERAL: return 'general';
+    case IVA_CONDITION_SPLIT:   return 'split';
+    default: return null;
+  }
+}
+
+export interface IvaLine {
+  /** Texto de la fila, ya con la alícuota. */
+  label: string;
+  base: number;
+  iva: number;
+}
+
 export interface IvaBreakdown {
-  /** Neto que tributa al 10,5 % (fabricación de bobinado). */
-  baseWinding: number;
-  /** Neto que tributa al 21 % (materiales y mantenimiento). */
-  baseGeneral: number;
-  ivaWinding: number;
-  ivaGeneral: number;
+  /** Una fila por alícuota aplicada: dos en modo `split`, una en los otros. */
+  lines: IvaLine[];
   net: number;
   ivaTotal: number;
   gross: number;
@@ -347,39 +373,56 @@ export function isWindingLabor(item: LaborItem): boolean {
   return type === 'winding';
 }
 
+interface IvaSection {
+  labor: LaborItem[];
+  bearings: BearingItem[];
+  spareParts: SparePartItem[];
+  machining: { subtotalARS: number }[];
+}
+
 /**
- * Reparte el neto del presupuesto entre las dos alícuotas de IVA.
+ * Reparte el neto del presupuesto según la condición de IVA elegida.
  * Recorre todas las secciones: el desglose es del presupuesto completo.
+ *
+ * Devuelve `null` cuando no hay chip elegido — el presupuesto se cotiza neto y
+ * no nos corresponde inventar una alícuota.
  */
 export function calculateIvaBreakdown(
-  sections: { labor: LaborItem[]; bearings: BearingItem[]; spareParts: SparePartItem[]; machining: { subtotalARS: number }[] }[]
-): IvaBreakdown {
-  let baseWinding = 0;
-  let baseGeneral = 0;
+  sections: IvaSection[],
+  ivaCondition: string | undefined
+): IvaBreakdown | null {
+  const mode = resolveIvaMode(ivaCondition);
+  if (!mode) return null;
+
+  let winding = 0;
+  let general = 0;
 
   for (const section of sections) {
     for (const item of section.labor) {
-      if (isWindingLabor(item)) baseWinding += item.priceARS;
-      else baseGeneral += item.priceARS;
+      // En modo `split` la fabricación de bobinado va al 10,5 %; en los demás
+      // modos hay una sola alícuota y la distinción no se usa.
+      if (mode === 'split' && isWindingLabor(item)) winding += item.priceARS;
+      else general += item.priceARS;
     }
-    baseGeneral += section.bearings.reduce((sum, i) => sum + i.subtotalARS, 0);
-    baseGeneral += section.spareParts.reduce((sum, i) => sum + i.subtotalARS, 0);
-    baseGeneral += section.machining.reduce((sum, i) => sum + i.subtotalARS, 0);
+    general += section.bearings.reduce((sum, i) => sum + i.subtotalARS, 0);
+    general += section.spareParts.reduce((sum, i) => sum + i.subtotalARS, 0);
+    general += section.machining.reduce((sum, i) => sum + i.subtotalARS, 0);
   }
 
-  const ivaWinding = Math.round(baseWinding * IVA_RATE_WINDING);
-  const ivaGeneral = Math.round(baseGeneral * IVA_RATE_GENERAL);
-  const net = baseWinding + baseGeneral;
+  const net = winding + general;
+  const lines: IvaLine[] =
+    mode === 'reduced'
+      ? [{ label: 'Total — 10,5%', base: net, iva: Math.round(net * IVA_RATE_WINDING) }]
+      : mode === 'general'
+      ? [{ label: 'Total — 21%', base: net, iva: Math.round(net * IVA_RATE_GENERAL) }]
+      : [
+          { label: 'Fabricación de bobinado — 10,5%', base: winding, iva: Math.round(winding * IVA_RATE_WINDING) },
+          { label: 'Materiales y mantenimiento — 21%', base: general, iva: Math.round(general * IVA_RATE_GENERAL) },
+        ];
 
-  return {
-    baseWinding,
-    baseGeneral,
-    ivaWinding,
-    ivaGeneral,
-    net,
-    ivaTotal: ivaWinding + ivaGeneral,
-    gross: net + ivaWinding + ivaGeneral,
-  };
+  const ivaTotal = lines.reduce((sum, l) => sum + l.iva, 0);
+
+  return { lines, net, ivaTotal, gross: net + ivaTotal };
 }
 
 /**
