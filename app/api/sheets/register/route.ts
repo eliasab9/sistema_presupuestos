@@ -6,7 +6,7 @@ import { createLogger } from '@/lib/logger';
 import {
   SHEETS_API,
   resolveSheetName,
-  readColumnsAB,
+  readBudgetRows,
   findNextBudgetSlot,
 } from '@/lib/sheets/sheet-rows';
 
@@ -36,7 +36,7 @@ async function findTargetRow(
   sheetName: string,
   budgetNumber: string
 ): Promise<number> {
-  const rows = await readColumnsAB(accessToken, spreadsheetId, sheetName);
+  const rows = await readBudgetRows(accessToken, spreadsheetId, sheetName);
 
   for (let i = 1; i < rows.length; i++) {
     const colA = rows[i]?.[0]?.trim() ?? '';

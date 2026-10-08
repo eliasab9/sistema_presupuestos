@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { refreshAccessToken } from '@/lib/google-drive';
 import { requireSheetsConfig } from '@/lib/config';
-import { resolveSheetName, readColumnsAB, findNextBudgetSlot } from '@/lib/sheets/sheet-rows';
+import { resolveSheetName, readBudgetRows, findNextBudgetSlot } from '@/lib/sheets/sheet-rows';
 
 const querySchema = z.object({
   companyId: z.enum(['bemec', 'bamore']).default('bemec'),
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
   try {
     const { access_token } = await refreshAccessToken(sheetsConfig.GOOGLE_OAUTH_REFRESH_TOKEN);
     const sheetName = await resolveSheetName(access_token, sheetsConfig.SPREADSHEET_ID, gid);
-    const rows = await readColumnsAB(access_token, sheetsConfig.SPREADSHEET_ID, sheetName);
+    const rows = await readBudgetRows(access_token, sheetsConfig.SPREADSHEET_ID, sheetName);
 
     return NextResponse.json({ success: true, nextNumber: findNextBudgetSlot(rows).number });
   } catch (error) {

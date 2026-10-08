@@ -5,14 +5,29 @@
  * en qué fila consideran "libre"; si divergen, se duplican o se saltean números.
  * Por eso esa regla vive acá y no copiada en cada handler.
  *
- * Layout de la planilla:
- *   A = Nº de solicitud  → se escribe al RESERVAR
- *   B = Fecha de solicitud → se escribe al REGISTRAR (envío efectivo)
+ * Layout real de la planilla (pestañas BEMEC y BAMORE):
+ *   A = Nº de solicitud     → lo escribe RESERVAR
+ *   B = Fecha de solicitud  → lo escribe REGISTRAR (envío efectivo)
+ *   C..I = responsable, medio, cliente, fechas, Nº PIDE, mercadería → REGISTRAR
+ *   J = fecha acordada      → lo completa la gente a mano
  *
- * La fecha es el marcador de "fila usada": sin ella la fila vuelve al pozo.
+ * La planilla NO es una tabla homogénea. Tiene, mezclado con los presupuestos:
+ *   - un encabezado de 8 filas (logo, título, subtítulo, títulos de columna);
+ *   - separadores de mes con texto en A y nada más ("oct-25", "SETIEMBRE 2025");
+ *   - filas en blanco usadas como espaciadores (BEMEC 451, 509, 579);
+ *   - registros viejos sin fecha pero con cliente cargado (BAMORE 9 = FECOVITA,
+ *     BAMORE 39 = CENCOSUD);
+ *   - algún número cargado en la pestaña equivocada (BEMEC fila 330 = 11149).
+ *
+ * Todo eso tiene que quedar intacto, así que el criterio de "fila libre" es
+ * estrecho a propósito. Ver findNextBudgetSlot.
  */
 
 export const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
+
+/** Columnas que se leen. Hace falta hasta J para distinguir una reserva
+ *  huérfana (sólo A) de un registro viejo al que le falta la fecha. */
+const READ_RANGE = 'A:J';
 
 export async function resolveSheetName(
   accessToken: string,
@@ -31,17 +46,17 @@ export async function resolveSheetName(
   return sheet.properties.title as string;
 }
 
-/** Lee las columnas A:B completas de la pestaña. */
-export async function readColumnsAB(
+/** Lee las columnas A:J completas de la pestaña. */
+export async function readBudgetRows(
   accessToken: string,
   spreadsheetId: string,
   sheetName: string
 ): Promise<string[][]> {
-  const range = encodeURIComponent(`'${sheetName}'!A:B`);
+  const range = encodeURIComponent(`'${sheetName}'!${READ_RANGE}`);
   const res = await fetch(`${SHEETS_API}/${spreadsheetId}/values/${range}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) throw new Error(`Error leyendo columnas A:B: ${await res.text()}`);
+  if (!res.ok) throw new Error(`Error leyendo ${READ_RANGE}: ${await res.text()}`);
   const data = await res.json();
   return (data.values ?? []) as string[][];
 }
@@ -61,56 +76,79 @@ function cell(rows: string[][], row: number, col: number): string {
   return rows[row]?.[col]?.trim() ?? '';
 }
 
-/**
- * Índice de la primera fila de datos: la primera cuyo A es un número.
- *
- * El encabezado ocupa varias filas (logo, subtítulo, títulos de columna) y no
- * siempre las mismas, así que anclarse en "la fila 2" no sirve.
- */
-function firstDataIndex(rows: string[][]): number {
-  for (let i = 0; i < rows.length; i++) {
-    if (NUMERIC.test(cell(rows, i, 0))) return i;
+/** La fila no tiene nada más que la columna A. */
+function emptyAfterA(rows: string[][], row: number): boolean {
+  const cells = rows[row] ?? [];
+  for (let c = 1; c < cells.length; c++) {
+    if ((cells[c] ?? '').trim() !== '') return false;
   }
-  return rows.length;
+  return true;
 }
 
 /**
- * Encuentra el próximo slot libre.
+ * Reserva huérfana: número en A y el resto de la fila vacío.
  *
- * Una fila cuenta como usada cuando tiene FECHA (columna B): es lo que escribe
- * el registro al enviar. Una fila con número en A pero sin fecha es una reserva
- * que nunca llegó a enviarse (falló la generación del archivo, se cerró la
- * pestaña, etc.) y hay que reutilizarla: tratarla como ocupada quemaba el número
- * para siempre y empujaba los presupuestos nuevos abajo del hueco.
+ * Es exactamente la huella que deja reserve-number, que escribe sólo A. Si el
+ * presupuesto se hubiera enviado, register habría completado B..I; si es un
+ * registro viejo al que le falta la fecha, tiene cliente o mercadería cargados.
+ */
+function isOrphanReservation(rows: string[][], row: number): boolean {
+  return NUMERIC.test(cell(rows, row, 0)) && emptyAfterA(rows, row);
+}
+
+/** Separador de mes: texto no numérico en A y nada más ("oct-25", "abril 2026"). */
+function isMonthSeparator(rows: string[][], row: number): boolean {
+  const a = cell(rows, row, 0);
+  return a !== '' && !NUMERIC.test(a) && emptyAfterA(rows, row);
+}
+
+/**
+ * Encuentra la fila donde va el próximo presupuesto.
  *
- * El número del slot es el que ya está en A si lo hay, así se respeta la reserva
- * previa en vez de inventar uno nuevo.
+ * 1. Reutiliza la primera reserva huérfana del bloque de mes vigente.
  *
- * La reserva sigue escribiendo A para acortar la ventana entre leer y registrar,
- * pero ya no la bloquea: el margen de colisión es el que va de la lectura a la
- * escritura dentro del mismo pedido.
+ *    Una reserva huérfana es un número que se reservó y nunca se envió (falló
+ *    la generación del archivo, se cerró la pestaña). Antes se las daba por
+ *    ocupadas: el número quedaba quemado para siempre y los envíos nuevos se
+ *    iban abajo del hueco. Pasó en las dos planillas (BAMORE 11292-11300,
+ *    BEMEC 1207-1211 y 1226-1273).
+ *
+ *    Sólo se miran las que están debajo del último separador de mes, para no
+ *    salir con un número de hace un año: BEMEC tiene huérfanas de 2025 (767,
+ *    832, 875, 922) que el usuario decidió dar por perdidas.
+ *
+ * 2. Si no quedan huecos, agrega al final con el número de la última fila
+ *    registrada + 1.
+ *
+ *    Se usa la última registrada y no el máximo de la columna A porque alcanza
+ *    un número cargado en la pestaña equivocada para romperlo: BEMEC tiene un
+ *    11149 en la fila 330 y "máximo + 1" proponía 11150 en vez de 1297.
+ *
+ * Nunca se escribe en una fila en blanco ni en un separador de mes, así que los
+ * espaciadores de la planilla quedan donde están.
  */
 export function findNextBudgetSlot(rows: string[][]): BudgetSlot {
-  const start = firstDataIndex(rows);
-
-  let highest = 0;
-  let index = -1;
-
-  for (let i = start; i < rows.length; i++) {
-    const colA = cell(rows, i, 0);
-    if (NUMERIC.test(colA)) highest = Math.max(highest, parseInt(colA, 10));
-    if (index === -1 && cell(rows, i, 1) === '') index = i;
+  // Bloque vigente: todo lo que está debajo del último separador de mes.
+  let blockStart = 0;
+  for (let i = 0; i < rows.length; i++) {
+    if (isMonthSeparator(rows, i)) blockStart = i + 1;
   }
 
-  // Sin huecos: se agrega al final. El mínimo de 1 evita pisar el encabezado
-  // cuando la API devuelve la hoja vacía.
-  if (index === -1) index = Math.max(rows.length, 1);
+  // Correlativo: el número de la última fila que tiene fecha.
+  let lastRegistered = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const a = cell(rows, i, 0);
+    if (NUMERIC.test(a) && cell(rows, i, 1) !== '') lastRegistered = parseInt(a, 10);
+  }
 
-  const reserved = cell(rows, index, 0);
+  for (let i = blockStart; i < rows.length; i++) {
+    if (isOrphanReservation(rows, i)) {
+      // Hereda el número ya reservado en vez de inventar uno nuevo.
+      return { index: i, rowNumber: i + 1, number: cell(rows, i, 0) };
+    }
+  }
 
-  return {
-    index,
-    rowNumber: index + 1,
-    number: NUMERIC.test(reserved) ? reserved : String(highest + 1),
-  };
+  // El mínimo de 1 evita pisar el encabezado cuando la hoja viene vacía.
+  const index = Math.max(rows.length, 1);
+  return { index, rowNumber: index + 1, number: String(lastRegistered + 1) };
 }

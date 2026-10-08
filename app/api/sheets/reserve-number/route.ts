@@ -6,7 +6,7 @@ import { createLogger } from '@/lib/logger';
 import {
   SHEETS_API,
   resolveSheetName,
-  readColumnsAB,
+  readBudgetRows,
   findNextBudgetSlot,
 } from '@/lib/sheets/sheet-rows';
 
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
   try {
     const { access_token } = await refreshAccessToken(sheetsConfig.GOOGLE_OAUTH_REFRESH_TOKEN);
     const sheetName = await resolveSheetName(access_token, sheetsConfig.SPREADSHEET_ID, gid);
-    const rows = await readColumnsAB(access_token, sheetsConfig.SPREADSHEET_ID, sheetName);
+    const rows = await readBudgetRows(access_token, sheetsConfig.SPREADSHEET_ID, sheetName);
 
     const slot = findNextBudgetSlot(rows);
 
