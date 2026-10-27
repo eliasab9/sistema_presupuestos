@@ -25,7 +25,7 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useNewEquipment } from '@/lib/new-equipment-context';
-import { COMPANIES } from '@/types/budget';
+import { COMPANIES, newEquipmentLabel } from '@/types/budget';
 import type { DeliverySettings, DeliveryWorkflowState, DeliveryWorkflowResult, DeliveryStep } from '@/types/delivery';
 import { getDefaultDeliverySettings, createInitialWorkflowState } from '@/types/delivery';
 
@@ -62,7 +62,7 @@ function buildNewEquipmentEmailSubject(): string {
 
 function buildNewEquipmentEmailBody(budget: NewEquipmentBudget): string {
   const itemSummary = budget.items.length > 0
-    ? budget.items.map(i => `${i.quantity > 1 ? `${i.quantity}x ` : ''}${i.type.replace(/_/g, ' ')}${i.brand ? ` ${i.brand}` : ''}${i.model ? ` ${i.model}` : ''}`).join(', ')
+    ? budget.items.map(i => `${i.quantity > 1 ? `${i.quantity}x ` : ''}${newEquipmentLabel(i)}${i.brand ? ` ${i.brand}` : ''}${i.model ? ` ${i.model}` : ''}`).join(', ')
     : 'los equipos detallados en el presupuesto';
   const body = `Estimados, adjunto aquí el presupuesto por ${itemSummary}.`;
   const signature = budget.meta.sellerSignature?.trim();

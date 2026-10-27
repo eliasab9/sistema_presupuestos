@@ -604,6 +604,21 @@ export interface NewEquipmentItem {
   customSpecs?: string;
 }
 
+/**
+ * Nombre visible de un ítem de equipo nuevo.
+ *
+ * Los tipos que no están en NEW_EQUIPMENT_TYPE_LABELS (los chips personalizados
+ * de la empresa) se cargan como `otro` + `customDescription`. Usar `item.type`
+ * directo imprime "otro" en el presupuesto, la planilla y el correo.
+ */
+export function newEquipmentLabel(
+  item: Pick<NewEquipmentItem, 'type' | 'customDescription'>
+): string {
+  const custom = item.customDescription?.trim();
+  if (item.type === 'otro' && custom) return custom;
+  return NEW_EQUIPMENT_TYPE_LABELS[item.type];
+}
+
 // New Equipment Budget (for sales)
 export interface NewEquipmentBudget {
   id: string;

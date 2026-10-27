@@ -6,7 +6,7 @@
  */
 
 import type { Budget } from '@/types/budget';
-import { EQUIPMENT_TYPE_LABELS } from '@/types/budget';
+import { EQUIPMENT_TYPE_LABELS, newEquipmentLabel } from '@/types/budget';
 import type { NewEquipmentBudget, NewEquipmentItem } from '@/types/budget';
 
 /**
@@ -70,7 +70,7 @@ function buildNewEquipmentMerchandise(budget: NewEquipmentBudget): string {
       if (item.brand) parts.push(item.brand);
       if (item.model) parts.push(item.model);
       const detail = parts.join(' ');
-      const label = item.type.replace(/_/g, ' ');
+      const label = newEquipmentLabel(item);
       return item.quantity > 1
         ? `${item.quantity}x ${label}${detail ? ' - ' + detail : ''}`
         : `${label}${detail ? ' - ' + detail : ''}`;

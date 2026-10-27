@@ -15,9 +15,10 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Trash2, Zap, Droplets, Settings, Gauge, Package, ChevronsUpDown, Check, Plus, X, Loader2 } from 'lucide-react';
-import { NEW_EQUIPMENT_TYPE_LABELS, type NewEquipmentType, type NewEquipmentItem } from '@/types/budget';
+import { NEW_EQUIPMENT_TYPE_LABELS, newEquipmentLabel, type NewEquipmentType, type NewEquipmentItem } from '@/types/budget';
 import { NewEquipmentDeliveryPanel } from '@/components/delivery/new-equipment-delivery-panel';
 import { SellerPicker, type SellerFromApi } from '@/components/forms/sections/seller-picker';
+import { IVA_CONDITION_REDUCED, IVA_CONDITION_GENERAL } from '@/lib/pricing/calculations';
 import { cn } from '@/lib/utils';
 
 const EQUIPMENT_ICONS: Record<NewEquipmentType, React.ReactNode> = {
@@ -248,11 +249,7 @@ function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {EQUIPMENT_ICONS[item.type]}
-            <CardTitle className="text-base">
-              {item.type === 'otro' && item.customDescription
-                ? item.customDescription
-                : NEW_EQUIPMENT_TYPE_LABELS[item.type]}
-            </CardTitle>
+            <CardTitle className="text-base">{newEquipmentLabel(item)}</CardTitle>
           </div>
           <Button
             variant="ghost"
@@ -672,6 +669,34 @@ export function NewEquipmentForm() {
                 placeholder="A convenir"
               />
             </div>
+          </div>
+          {/* Condición de IVA. Una sola alícuota: la venta de un equipo no se
+              parte entre bobinado y materiales como una reparación. */}
+          <div className="mt-3">
+            <Label className="text-xs">Condición de IVA</Label>
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {[IVA_CONDITION_REDUCED, IVA_CONDITION_GENERAL].map((opt) => {
+                const isActive = meta.ivaCondition === opt;
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setMeta({ ivaCondition: isActive ? '' : opt })}
+                    className={cn(
+                      'px-2.5 py-1 text-xs rounded-md border transition-colors',
+                      isActive
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-background text-muted-foreground hover:bg-muted'
+                    )}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1.5">
+              Sin alícuota elegida el presupuesto sale neto, sin tabla de IVA.
+            </p>
           </div>
           <div className="mt-3">
             <Label className="text-xs">Observaciones Generales</Label>

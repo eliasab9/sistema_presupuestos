@@ -4,6 +4,7 @@ import {
   generateSuggestedLabor,
   mergeSuggestedLabor,
   calculateIvaBreakdown,
+  calculateNewEquipmentIvaBreakdown,
   resolveIvaMode,
   IVA_CONDITION_REDUCED,
   IVA_CONDITION_GENERAL,
@@ -181,6 +182,30 @@ describe('calculateIvaBreakdown', () => {
     const iva = calculateIvaBreakdown([], IVA_CONDITION_SPLIT)!;
     expect(iva.net).toBe(0);
     expect(iva.gross).toBe(0);
+  });
+});
+
+describe('calculateNewEquipmentIvaBreakdown', () => {
+  it('aplica el 21% en una sola fila', () => {
+    const iva = calculateNewEquipmentIvaBreakdown(1_000_000, IVA_CONDITION_GENERAL)!;
+    expect(iva.lines).toEqual([{ label: 'Total — 21%', base: 1_000_000, iva: 210_000 }]);
+    expect(iva.gross).toBe(1_210_000);
+  });
+
+  it('aplica el 10,5% en una sola fila', () => {
+    const iva = calculateNewEquipmentIvaBreakdown(1_000_000, IVA_CONDITION_REDUCED)!;
+    expect(iva.lines).toEqual([{ label: 'Total — 10,5%', base: 1_000_000, iva: 105_000 }]);
+    expect(iva.gross).toBe(1_105_000);
+  });
+
+  it('rechaza el modo combinado: un equipo nuevo no se parte en dos alícuotas', () => {
+    expect(calculateNewEquipmentIvaBreakdown(1_000_000, IVA_CONDITION_SPLIT)).toBeNull();
+  });
+
+  it('devuelve null sin alícuota elegida', () => {
+    expect(calculateNewEquipmentIvaBreakdown(1_000_000, undefined)).toBeNull();
+    expect(calculateNewEquipmentIvaBreakdown(1_000_000, '')).toBeNull();
+    expect(calculateNewEquipmentIvaBreakdown(1_000_000, 'exento')).toBeNull();
   });
 });
 

@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useNewEquipment } from '@/lib/new-equipment-context';
-import { COMPANIES, NEW_EQUIPMENT_TYPE_LABELS } from '@/types/budget';
+import { COMPANIES, newEquipmentLabel } from '@/types/budget';
+import { calculateNewEquipmentIvaBreakdown } from '@/lib/pricing/calculations';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
 const DOC_WIDTH_PX = 794;
@@ -52,13 +53,16 @@ export function NewEquipmentPreview() {
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
 
+  /** Mismo criterio que el SUBTOTAL: si el presupuesto va en USD, el desglose también. */
+  const formatTotal = (amount: number) =>
+    meta.currency === 'USD' && meta.exchangeRate > 0
+      ? `U$S ${(amount / meta.exchangeRate).toFixed(2)}`
+      : formatCurrency(amount);
+
+  const iva = calculateNewEquipmentIvaBreakdown(subtotalItems, meta.ivaCondition);
+
   const getEquipmentDescription = (item: typeof items[0]) => {
-    const parts: string[] = [];
-    if (item.type === 'otro' && item.customDescription) {
-      parts.push(item.customDescription);
-    } else {
-      parts.push(NEW_EQUIPMENT_TYPE_LABELS[item.type]);
-    }
+    const parts: string[] = [newEquipmentLabel(item)];
     if (item.brand) parts.push(item.brand);
     if (item.model) parts.push(`Mod. ${item.model}`);
     if (item.potencia) parts.push(item.potencia);
@@ -231,12 +235,48 @@ export function NewEquipmentPreview() {
                 <section style={{ borderTop: `3px solid ${primaryColor}`, paddingTop: '10px', marginBottom: '15px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '14px', fontWeight: 'bold' }}>
                     <span>SUBTOTAL</span>
-                    <span style={{ color: primaryColor }}>
-                      {meta.currency === 'USD' && meta.exchangeRate > 0
-                        ? `U$S ${(subtotalItems / meta.exchangeRate).toFixed(2)}`
-                        : formatCurrency(subtotalItems)}
-                    </span>
+                    <span style={{ color: primaryColor }}>{formatTotal(subtotalItems)}</span>
                   </div>
+                </section>
+              )}
+
+              {/* Discriminación de IVA — el presupuesto se cotiza neto, esto es
+                  sólo informativo para que el cliente sepa qué alícuota aplica.
+                  Se oculta junto con el SUBTOTAL: si no se muestra el total,
+                  esta tabla lo delataría. */}
+              {showTotal !== false && iva && iva.net > 0 && (
+                <section style={{ marginTop: '12px', marginBottom: '15px' }}>
+                  <h3 style={{
+                    fontSize: '10px', fontWeight: 'bold', color: primaryColor, textTransform: 'uppercase',
+                    letterSpacing: '0.5px', marginBottom: '4px',
+                  }}>
+                    Discriminación de IVA
+                  </h3>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid #ddd', color: '#555' }}>
+                        <th style={{ textAlign: 'left',  padding: '3px 0' }}>Concepto</th>
+                        <th style={{ textAlign: 'right', padding: '3px 0' }}>Neto</th>
+                        <th style={{ textAlign: 'right', padding: '3px 0' }}>IVA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {iva.lines.map((line) => (
+                        <tr key={line.label} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                          <td style={{ padding: '3px 0' }}>{line.label}</td>
+                          <td style={{ textAlign: 'right', padding: '3px 0' }}>{formatTotal(line.base)}</td>
+                          <td style={{ textAlign: 'right', padding: '3px 0' }}>{formatTotal(line.iva)}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ fontWeight: 'bold', color: '#333' }}>
+                        <td style={{ padding: '4px 0' }}>Total con IVA</td>
+                        <td style={{ textAlign: 'right', padding: '4px 0' }}>{formatTotal(iva.net)}</td>
+                        <td style={{ textAlign: 'right', padding: '4px 0', color: primaryColor }}>
+                          {formatTotal(iva.gross)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </section>
               )}
 
@@ -249,14 +289,14 @@ export function NewEquipmentPreview() {
                   Observaciones
                 </h3>
                 <ul style={{ fontSize: '9px', color: '#555', margin: 0, paddingLeft: '15px' }}>
+                  <li style={{ marginBottom: '3px' }}>
+                    Precios {meta.ivaCondition ? `con IVA ${meta.ivaCondition} discriminado aparte` : 'netos de IVA'}.
+                  </li>
                   {meta.commercialValidity && <li style={{ marginBottom: '3px' }}>Validez: {meta.commercialValidity}.</li>}
                   {meta.paymentTerms && <li style={{ marginBottom: '3px' }}>Forma de pago: {meta.paymentTerms}.</li>}
                   {meta.generalNotes && meta.generalNotes.split('\n').map((line, idx) => (
                     <li key={idx} style={{ marginBottom: '3px' }}>{line}</li>
                   ))}
-                  {!meta.commercialValidity && !meta.paymentTerms && !meta.generalNotes && (
-                    <li style={{ marginBottom: '3px', color: '#999', fontStyle: 'italic' }}>Sin observaciones</li>
-                  )}
                 </ul>
               </section>
 

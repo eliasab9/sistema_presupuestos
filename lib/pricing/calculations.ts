@@ -426,6 +426,27 @@ export function calculateIvaBreakdown(
 }
 
 /**
+ * Desglose de IVA de un presupuesto de equipo nuevo.
+ *
+ * Acá hay una sola alícuota: la venta de un equipo no se reparte entre
+ * fabricación de bobinado y materiales, así que el modo `split` no aplica y se
+ * trata igual que no haber elegido nada.
+ */
+export function calculateNewEquipmentIvaBreakdown(
+  net: number,
+  ivaCondition: string | undefined
+): IvaBreakdown | null {
+  const mode = resolveIvaMode(ivaCondition);
+  if (mode !== 'reduced' && mode !== 'general') return null;
+
+  const rate = mode === 'reduced' ? IVA_RATE_WINDING : IVA_RATE_GENERAL;
+  const iva = Math.round(net * rate);
+  const label = mode === 'reduced' ? 'Total — 10,5%' : 'Total — 21%';
+
+  return { lines: [{ label, base: net, iva }], net, ivaTotal: iva, gross: net + iva };
+}
+
+/**
  * Generate next budget number
  */
 export function generateBudgetNumber(lastNumber?: string): string {
