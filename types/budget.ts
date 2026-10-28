@@ -39,6 +39,9 @@ export interface Customer {
   id: string;
   name: string;
   attention?: string;
+  // Tratamiento para el saludo del correo. Lo elige el vendedor: no se deduce
+  // del nombre. Sin valor el saludo sale neutro ("Estimado/a").
+  attentionTitle?: 'sr' | 'sra';
   email?: string;
   phone?: string;
   cuit?: string;

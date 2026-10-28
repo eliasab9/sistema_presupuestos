@@ -37,7 +37,8 @@ export {
 export {
   buildBudgetEmailSubject,
   buildBudgetEmailBody,
-  buildEquipmentDescription,
+  buildNewEquipmentEmailBody,
+  buildGreeting,
   buildEmailPayloadData,
   validateEmail,
   parseEmailList,

@@ -3,33 +3,44 @@ import {
   parseEmailList,
   validateEmail,
   validateEmailRequirements,
-  buildEquipmentDescription,
+  buildGreeting,
   buildBudgetEmailBody,
+  buildNewEquipmentEmailBody,
   buildBudgetEmailSubject,
 } from '../email-builder';
-import type { Budget } from '@/types/budget';
+import type { Budget, Customer, Equipment, NewEquipmentBudget, NewEquipmentItem } from '@/types/budget';
 
 // Minimal Budget fixture
-function makeBudget(equipment: {
-  type?: string;
-  subtype?: string;
-  brand?: string;
-  model?: string;
-} = {}): Budget {
+function makeBudget(
+  equipment: Partial<Equipment> = {},
+  extra: { customer?: Partial<Customer>; allSections?: { equipment: Partial<Equipment> }[] } = {}
+): Budget {
   return {
     id: 'test-id',
     companyId: 'bemec',
-    customer: { name: 'ACME', email: 'test@acme.com' },
+    customer: { name: 'ACME', email: 'test@acme.com', ...extra.customer },
     meta: { number: '1', date: '01/01/2026' },
-    equipment: {
-      type: equipment.type ?? 'motor_electrico',
-      subtype: equipment.subtype,
-      brand: equipment.brand,
-      model: equipment.model,
-      power: 10,
-      quantity: 1,
-    },
+    equipment: { type: 'motor_electrico', power: 10, quantity: 1, ...equipment },
+    allSections: extra.allSections?.map((s, i) => ({
+      id: `s${i}`,
+      label: `Equipo ${i + 1}`,
+      equipment: { type: 'motor_electrico', power: 10, quantity: 1, ...s.equipment },
+      workItems: [], bearings: [], spareParts: [], machining: [], labor: [],
+    })),
   } as unknown as Budget;
+}
+
+function makeNewEquipmentBudget(items: Partial<NewEquipmentItem>[], customer: Partial<Customer> = {}): NewEquipmentBudget {
+  return {
+    id: 'ne-id',
+    companyId: 'bemec',
+    customer: { name: 'ACME', email: 'test@acme.com', ...customer },
+    meta: { number: '1', date: '01/01/2026' },
+    items: items.map((it, i) => ({
+      id: `i${i}`, type: 'motor_electrico', brand: '', model: '', quantity: 1,
+      unitPriceARS: 0, subtotalARS: 0, ...it,
+    })),
+  } as unknown as NewEquipmentBudget;
 }
 
 // ─── parseEmailList ────────────────────────────────────────────────────────
@@ -124,43 +135,22 @@ describe('validateEmailRequirements', () => {
   });
 });
 
-// ─── buildEquipmentDescription ─────────────────────────────────────────────
+// ─── buildGreeting ─────────────────────────────────────────────────────────
 
-describe('buildEquipmentDescription', () => {
-  it('returns fallback when no equipment info', () => {
-    const budget = { ...makeBudget(), equipment: { type: '', power: 0, quantity: 1 } } as unknown as Budget;
-    expect(buildEquipmentDescription(budget)).toBe('el equipo detallado en el presupuesto');
+describe('buildGreeting', () => {
+  it('usa el plural neutro sin contacto cargado', () => {
+    expect(buildGreeting({})).toBe('Estimados/as,');
+    expect(buildGreeting({ attention: '   ' })).toBe('Estimados/as,');
+    expect(buildGreeting(undefined)).toBe('Estimados/as,');
   });
 
-  it('includes equipment type label', () => {
-    const desc = buildEquipmentDescription(makeBudget({ type: 'motor_electrico' }));
-    expect(desc).toContain('motor eléctrico');
+  it('sin tratamiento elegido usa el neutro con nombre', () => {
+    expect(buildGreeting({ attention: 'Juan Pérez' })).toBe('Estimado/a Juan Pérez,');
   });
 
-  it('uses feminine article for bomba types when details are present', () => {
-    // Article is only computed when there are 2+ parts (type + brand/model)
-    const desc = buildEquipmentDescription(makeBudget({ type: 'bomba_centrifuga', brand: 'Grundfos' }));
-    expect(desc).toMatch(/^de la /);
-  });
-
-  it('uses masculine article for motor types when details are present', () => {
-    const desc = buildEquipmentDescription(makeBudget({ type: 'motor_electrico', brand: 'Siemens' }));
-    expect(desc).toMatch(/^del /);
-  });
-
-  it('uses "del" shorthand when only type is present', () => {
-    const desc = buildEquipmentDescription(makeBudget({ type: 'bomba_centrifuga' }));
-    expect(desc).toMatch(/^del /);
-  });
-
-  it('includes brand when provided', () => {
-    const desc = buildEquipmentDescription(makeBudget({ type: 'motor_electrico', brand: 'Siemens' }));
-    expect(desc).toContain('Siemens');
-  });
-
-  it('includes model when provided', () => {
-    const desc = buildEquipmentDescription(makeBudget({ type: 'motor_electrico', model: 'XM200' }));
-    expect(desc).toContain('XM200');
+  it('respeta el selector Sr./Sra.', () => {
+    expect(buildGreeting({ attention: 'Juan', attentionTitle: 'sr' })).toBe('Estimado Juan,');
+    expect(buildGreeting({ attention: 'Ana', attentionTitle: 'sra' })).toBe('Estimada Ana,');
   });
 });
 
@@ -175,17 +165,91 @@ describe('buildBudgetEmailSubject', () => {
 // ─── buildBudgetEmailBody ──────────────────────────────────────────────────
 
 describe('buildBudgetEmailBody', () => {
-  it('starts with "Estimados"', () => {
-    expect(buildBudgetEmailBody(makeBudget())).toMatch(/^Estimados/);
+  it('arma saludo, listado y cierre', () => {
+    const body = buildBudgetEmailBody(makeBudget(
+      { type: 'motor_electrico', brand: 'WEG', model: 'W22', power: 10, rpm: 1500, serial: '123456' },
+      { customer: { attention: 'Juan Pérez', attentionTitle: 'sr' } }
+    ));
+
+    expect(body).toBe(
+      'Estimado Juan Pérez,\n\n' +
+      'Adjunto aquí el presupuesto por la reparación de:\n\n' +
+      '• Motor eléctrico — Marca WEG · Modelo W22 · 10 HP · 1500 RPM · Serie 123456\n\n' +
+      'Quedo a disposición.'
+    );
   });
 
-  it('contains equipment description', () => {
-    const body = buildBudgetEmailBody(makeBudget({ type: 'motor_electrico' }));
-    expect(body).toContain('motor eléctrico');
+  it('lista todos los equipos de las pestañas, no sólo el activo', () => {
+    const body = buildBudgetEmailBody(makeBudget({}, {
+      allSections: [
+        { equipment: { type: 'motor_electrico', brand: 'WEG', power: 10 } },
+        { equipment: { type: 'bomba_centrifuga', brand: 'Grundfos', power: 5, quantity: 2 } },
+      ],
+    }));
+
+    expect(body).toContain('• Motor eléctrico — Marca WEG · 10 HP');
+    expect(body).toContain('• 2x Bomba centrífuga — Marca Grundfos · 5 HP');
   });
 
-  it('contains "presupuesto por la reparación"', () => {
-    const body = buildBudgetEmailBody(makeBudget());
-    expect(body).toContain('presupuesto por la reparación');
+  it('prefiere la etiqueta del tipo propio de la empresa', () => {
+    const body = buildBudgetEmailBody(makeBudget({ type: 'otro', customTypeLabel: 'Tablero eléctrico', power: 0 }));
+    expect(body).toContain('• Tablero eléctrico');
+    expect(body).not.toContain('Otro');
+  });
+
+  it('no filtra el motivo de falla ni las notas internas', () => {
+    const body = buildBudgetEmailBody(makeBudget({
+      failureReason: 'Bobinado quemado', notes: 'Cliente moroso',
+    }));
+    expect(body).not.toContain('Bobinado quemado');
+    expect(body).not.toContain('Cliente moroso');
+  });
+
+  it('sin equipo cargado no imprime una lista vacía', () => {
+    const body = buildBudgetEmailBody(makeBudget({ type: '', power: 0 }));
+    expect(body).toBe('Estimados/as,\n\nAdjunto aquí el presupuesto solicitado.\n\nQuedo a disposición.');
+  });
+
+  it('agrega la firma del vendedor al final', () => {
+    const budget = makeBudget();
+    budget.meta.sellerSignature = 'Saludos,\nPedro';
+    expect(buildBudgetEmailBody(budget)).toMatch(/Quedo a disposición\.\n\nSaludos,\nPedro$/);
+  });
+});
+
+// ─── buildNewEquipmentEmailBody ────────────────────────────────────────────
+
+describe('buildNewEquipmentEmailBody', () => {
+  it('lista los equipos nuevos con todos sus datos', () => {
+    const body = buildNewEquipmentEmailBody(makeNewEquipmentBudget(
+      [{ type: 'motor_electrico', brand: 'WEG', model: 'W22', potencia: '10 HP', rpm: 1500, voltaje: '380 V' }],
+      { attention: 'Ana', attentionTitle: 'sra' }
+    ));
+
+    expect(body).toBe(
+      'Estimada Ana,\n\n' +
+      'Adjunto aquí el presupuesto por:\n\n' +
+      '• Motor Eléctrico — Marca WEG · Modelo W22 · 10 HP · 1500 RPM · 380 V\n\n' +
+      'Quedo a disposición.'
+    );
+  });
+
+  it('usa la descripción personalizada en vez de "Otro"', () => {
+    const body = buildNewEquipmentEmailBody(makeNewEquipmentBudget([
+      { type: 'otro', customDescription: 'Tablero eléctrico', customSpecs: 'IP65' },
+    ]));
+    expect(body).toContain('• Tablero eléctrico — IP65');
+  });
+
+  it('deja afuera las notas internas', () => {
+    const body = buildNewEquipmentEmailBody(makeNewEquipmentBudget([
+      { type: 'motor_electrico', notes: 'Margen al 40%' },
+    ]));
+    expect(body).not.toContain('Margen al 40%');
+  });
+
+  it('sin ítems no imprime una lista vacía', () => {
+    const body = buildNewEquipmentEmailBody(makeNewEquipmentBudget([]));
+    expect(body).toBe('Estimados/as,\n\nAdjunto aquí el presupuesto solicitado.\n\nQuedo a disposición.');
   });
 });

@@ -25,7 +25,8 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useNewEquipment } from '@/lib/new-equipment-context';
-import { COMPANIES, newEquipmentLabel } from '@/types/budget';
+import { COMPANIES } from '@/types/budget';
+import { buildNewEquipmentEmailBody } from '@/lib/delivery/email-builder';
 import type { DeliverySettings, DeliveryWorkflowState, DeliveryWorkflowResult, DeliveryStep } from '@/types/delivery';
 import { getDefaultDeliverySettings, createInitialWorkflowState } from '@/types/delivery';
 
@@ -58,15 +59,6 @@ export function buildNewEquipmentFileName(budget: NewEquipmentBudget): string {
 
 function buildNewEquipmentEmailSubject(): string {
   return 'Presupuesto equipo nuevo';
-}
-
-function buildNewEquipmentEmailBody(budget: NewEquipmentBudget): string {
-  const itemSummary = budget.items.length > 0
-    ? budget.items.map(i => `${i.quantity > 1 ? `${i.quantity}x ` : ''}${newEquipmentLabel(i)}${i.brand ? ` ${i.brand}` : ''}${i.model ? ` ${i.model}` : ''}`).join(', ')
-    : 'los equipos detallados en el presupuesto';
-  const body = `Estimados, adjunto aquí el presupuesto por ${itemSummary}.`;
-  const signature = budget.meta.sellerSignature?.trim();
-  return signature ? `${body}\n\n${signature}` : body;
 }
 
 function getStepDisplay(step: DeliveryStep) {
@@ -113,13 +105,17 @@ export function NewEquipmentDeliveryPanel() {
     setSigExpanded(!sig);
   }, [budget.meta.sellerId]);
 
+  // El cuerpo se regenera cuando cambia el texto que sale, no sólo al cambiar
+  // de presupuesto: así el saludo y el listado siguen los datos del formulario.
+  const generatedEmailBody = buildNewEquipmentEmailBody(budget);
+
   // Auto-fill settings from budget data
   useEffect(() => {
     setSettings(prev => ({
       ...prev,
       fileName: buildNewEquipmentFileName(budget),
       emailSubject: buildNewEquipmentEmailSubject(),
-      emailBody: buildNewEquipmentEmailBody(budget),
+      emailBody: generatedEmailBody,
       emailTo: budget.customer.email || '',
       driveDestination: {
         ...prev.driveDestination,
@@ -128,7 +124,7 @@ export function NewEquipmentDeliveryPanel() {
       },
     }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [budget.id, budget.customer.email, budget.companyId, budget.meta.responsable, budget.meta.sellerSignature]);
+  }, [budget.id, budget.customer.email, budget.companyId, budget.meta.responsable, generatedEmailBody]);
 
   const validate = useCallback(() => {
     const errors: string[] = [];
@@ -350,7 +346,7 @@ export function NewEquipmentDeliveryPanel() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Cuerpo del mensaje</Label>
-                <Button variant="ghost" size="sm" onClick={() => setSettings(prev => ({ ...prev, emailBody: buildNewEquipmentEmailBody(budget) }))} disabled={isRunning} className="text-xs">
+                <Button variant="ghost" size="sm" onClick={() => setSettings(prev => ({ ...prev, emailBody: generatedEmailBody }))} disabled={isRunning} className="text-xs">
                   <RefreshCw className="w-3 h-3 mr-1" />Regenerar
                 </Button>
               </div>

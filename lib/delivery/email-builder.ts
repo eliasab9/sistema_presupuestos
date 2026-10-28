@@ -1,7 +1,7 @@
 // Email content building utilities
 
-import type { Budget } from '@/types/budget';
-import { EQUIPMENT_TYPE_LABELS } from '@/types/budget';
+import type { Budget, Customer, Equipment, NewEquipmentBudget, NewEquipmentItem } from '@/types/budget';
+import { EQUIPMENT_TYPE_LABELS, newEquipmentLabel } from '@/types/budget';
 
 /**
  * Build the email subject for a budget
@@ -12,64 +12,128 @@ export function buildBudgetEmailSubject(budget: Budget): string {
 }
 
 /**
- * Build the equipment description for the email body
- * Handles missing data gracefully with fallbacks
+ * Saludo del correo a partir del contacto de "Atención".
+ *
+ * El tratamiento lo elige el vendedor con el selector Sr./Sra.: no se deduce
+ * del nombre. Sin contacto cargado el saludo sale en plural neutro.
  */
-export function buildEquipmentDescription(budget: Budget): string {
-  const parts: string[] = [];
-  
-  // Equipment type
-  if (budget.equipment.type) {
-    const typeLabel = EQUIPMENT_TYPE_LABELS[budget.equipment.type] || budget.equipment.type;
-    parts.push(typeLabel.toLowerCase());
-  }
-  
-  // Subtype (if exists)
-  if (budget.equipment.subtype) {
-    parts.push(budget.equipment.subtype);
-  }
-  
-  // Model
-  if (budget.equipment.model) {
-    parts.push(`modelo ${budget.equipment.model}`);
-  }
-  
-  // Brand
-  if (budget.equipment.brand) {
-    parts.push(`marca ${budget.equipment.brand}`);
-  }
-  
-  // Fallback if no equipment info
-  if (parts.length === 0) {
-    return 'el equipo detallado en el presupuesto';
-  }
-  
-  // Build description based on available parts
-  if (parts.length === 1) {
-    return `del ${parts[0]}`;
-  }
-  
-  // Join with proper grammar
-  // e.g., "de la bomba centrífuga modelo X, marca Y"
-  const equipmentType = parts[0];
-  const details = parts.slice(1).join(', ');
-  
-  // Use "del" for masculine, "de la" for feminine equipment types
-  const feminineTypes = ['bomba', 'electrobomba'];
-  const article = feminineTypes.some(t => equipmentType.includes(t)) ? 'de la' : 'del';
-  
-  return `${article} ${equipmentType} ${details}`;
+export function buildGreeting(
+  customer: Pick<Customer, 'attention' | 'attentionTitle'> | undefined
+): string {
+  const name = customer?.attention?.trim();
+  if (!name) return 'Estimados/as,';
+
+  const title =
+    customer?.attentionTitle === 'sr' ? 'Estimado'
+    : customer?.attentionTitle === 'sra' ? 'Estimada'
+    : 'Estimado/a';
+
+  return `${title} ${name},`;
+}
+
+/** Arma "Etiqueta — Detalle · Detalle", omitiendo lo que esté vacío. */
+function joinEquipmentLine(label: string, details: string[], quantity: number): string | null {
+  const clean = details.map(d => d.trim()).filter(Boolean);
+  if (!label && clean.length === 0) return null;
+
+  const prefix = quantity > 1 ? `${quantity}x ` : '';
+  const head = label || 'Equipo';
+  return clean.length > 0 ? `${prefix}${head} — ${clean.join(' · ')}` : `${prefix}${head}`;
 }
 
 /**
- * Build the email body for a budget.
- * Appends the seller's signature (from meta.sellerSignature) when present.
+ * Equipos del presupuesto de reparación. Los multi-equipo viven en
+ * `allSections`; los viejos (y los que nunca cambiaron de sección) sólo tienen
+ * el equipo plano. El llamador debería pasar el presupuesto ya sincronizado
+ * con `withSyncedSections`.
+ */
+function resolveRepairEquipment(budget: Budget): Equipment[] {
+  if (budget.allSections?.length) return budget.allSections.map(s => s.equipment);
+  return [budget.equipment];
+}
+
+/**
+ * Una línea por equipo a reparar. Se listan todos los datos cargados menos el
+ * motivo de la falla y las notas internas, que no van al cliente.
+ */
+export function buildRepairEquipmentLines(budget: Budget): string[] {
+  return resolveRepairEquipment(budget)
+    .map(eq => {
+      const label = eq.customTypeLabel?.trim() || (eq.type ? EQUIPMENT_TYPE_LABELS[eq.type] : '');
+      const details: string[] = [];
+      if (eq.brand) details.push(`Marca ${eq.brand}`);
+      if (eq.model) details.push(`Modelo ${eq.model}`);
+      if (eq.subtype) details.push(eq.subtype);
+      if (eq.power > 0) details.push(`${eq.power} HP`);
+      if (eq.rpm) details.push(`${eq.rpm} RPM`);
+      if (eq.serial) details.push(`Serie ${eq.serial}`);
+      return joinEquipmentLine(label, details, eq.quantity);
+    })
+    .filter((line): line is string => line !== null);
+}
+
+/**
+ * Una línea por equipo nuevo cotizado. Igual que en reparación, las notas
+ * internas quedan afuera.
+ */
+export function buildNewEquipmentLines(items: NewEquipmentItem[]): string[] {
+  return items
+    .map(item => {
+      const details: string[] = [];
+      if (item.brand) details.push(`Marca ${item.brand}`);
+      if (item.model) details.push(`Modelo ${item.model}`);
+      if (item.potencia) details.push(item.potencia);
+      if (item.potenciaKW) details.push(item.potenciaKW);
+      if (item.rpm) details.push(`${item.rpm} RPM`);
+      if (item.voltaje) details.push(item.voltaje);
+      if (item.voltajeEntrada) details.push(`Entrada ${item.voltajeEntrada}`);
+      if (item.formaConstructiva) details.push(`FC ${item.formaConstructiva}`);
+      if (item.relacionTransmision) details.push(`i=${item.relacionTransmision}`);
+      if (item.customSpecs) details.push(item.customSpecs);
+      return joinEquipmentLine(newEquipmentLabel(item), details, item.quantity);
+    })
+    .filter((line): line is string => line !== null);
+}
+
+/** Ensambla saludo + listado + cierre + firma del vendedor. */
+function composeEmailBody(
+  greeting: string,
+  leadIn: string,
+  lines: string[],
+  signature: string | undefined
+): string {
+  const blocks = lines.length > 0
+    ? [greeting, `${leadIn}:`, lines.map(l => `• ${l}`).join('\n'), 'Quedo a disposición.']
+    : [greeting, 'Adjunto aquí el presupuesto solicitado.', 'Quedo a disposición.'];
+
+  const trimmedSignature = signature?.trim();
+  if (trimmedSignature) blocks.push(trimmedSignature);
+
+  return blocks.join('\n\n');
+}
+
+/**
+ * Cuerpo del correo de un presupuesto de reparación.
  */
 export function buildBudgetEmailBody(budget: Budget): string {
-  const equipmentDesc = buildEquipmentDescription(budget);
-  const body = `Estimados, adjunto aquí el presupuesto por la reparación ${equipmentDesc}.`;
-  const signature = budget.meta.sellerSignature?.trim();
-  return signature ? `${body}\n\n${signature}` : body;
+  return composeEmailBody(
+    buildGreeting(budget.customer),
+    'Adjunto aquí el presupuesto por la reparación de',
+    buildRepairEquipmentLines(budget),
+    budget.meta.sellerSignature
+  );
+}
+
+/**
+ * Cuerpo del correo de un presupuesto de equipo nuevo.
+ */
+export function buildNewEquipmentEmailBody(budget: NewEquipmentBudget): string {
+  return composeEmailBody(
+    buildGreeting(budget.customer),
+    'Adjunto aquí el presupuesto por',
+    buildNewEquipmentLines(budget.items),
+    budget.meta.sellerSignature
+  );
 }
 
 /**

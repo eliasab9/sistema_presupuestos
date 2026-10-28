@@ -63,6 +63,7 @@ export function CustomerSelector({ value, onChange, onSaveCustomer, companyId }:
       id: customer.id,
       name: customer.name,
       attention: customer.attention,
+      attentionTitle: customer.attentionTitle,
       email: customer.email,
       phone: customer.phone,
       cuit: customer.cuit,
@@ -77,6 +78,11 @@ export function CustomerSelector({ value, onChange, onSaveCustomer, companyId }:
 
   const handleFieldChange = useCallback((field: keyof Customer, fieldValue: string) => {
     onChange({ ...value, [field]: fieldValue });
+    setHasUnsavedChanges(true);
+  }, [value, onChange]);
+
+  const handleAttentionTitleChange = useCallback((title: Customer['attentionTitle']) => {
+    onChange({ ...value, attentionTitle: title });
     setHasUnsavedChanges(true);
   }, [value, onChange]);
 
@@ -132,6 +138,7 @@ export function CustomerSelector({ value, onChange, onSaveCustomer, companyId }:
     onChange({
       name: '',
       attention: '',
+      attentionTitle: undefined,
       email: '',
       phone: '',
       cuit: '',
@@ -261,12 +268,28 @@ export function CustomerSelector({ value, onChange, onSaveCustomer, companyId }:
 
         <div>
           <Label htmlFor="customer-attention">Atención</Label>
-          <Input
-            id="customer-attention"
-            value={value.attention || ''}
-            onChange={(e) => handleFieldChange('attention', e.target.value)}
-            placeholder="Persona de contacto"
-          />
+          <div className="flex gap-1.5">
+            <Input
+              id="customer-attention"
+              value={value.attention || ''}
+              onChange={(e) => handleFieldChange('attention', e.target.value)}
+              placeholder="Persona de contacto"
+            />
+            {/* Tratamiento para el saludo del correo ("Estimado"/"Estimada").
+                Sin elegir sale neutro: "Estimado/a". */}
+            {(['sr', 'sra'] as const).map((t) => (
+              <Button
+                key={t}
+                type="button"
+                variant={value.attentionTitle === t ? 'default' : 'outline'}
+                className="px-2.5 shrink-0"
+                title={t === 'sr' ? 'Saludar "Estimado"' : 'Saludar "Estimada"'}
+                onClick={() => handleAttentionTitleChange(value.attentionTitle === t ? undefined : t)}
+              >
+                {t === 'sr' ? 'Sr.' : 'Sra.'}
+              </Button>
+            ))}
+          </div>
         </div>
 
         <div>

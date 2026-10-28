@@ -92,11 +92,16 @@ export function DeliveryPanel() {
     setSigExpanded(!sig); // collapsed when signature already loaded
   }, [budget.meta.sellerId]);
   
+  // El cuerpo lista TODOS los equipos, así que necesita el presupuesto
+  // sincronizado: lo editado en la pestaña activa todavía no está en allSections.
+  // Se regenera cuando cambia el texto, no sólo al cambiar de presupuesto.
+  const generatedEmailBody = buildBudgetEmailBody(withSyncedSections(budget));
+
   // Auto-fill settings based on budget data
   useEffect(() => {
     const fileName = buildBudgetFileName(budget, settings.fileFormat);
     const emailSubject = buildBudgetEmailSubject(budget);
-    const emailBody = buildBudgetEmailBody(budget);
+    const emailBody = generatedEmailBody;
     const emailTo = budget.customer.email || '';
     
     // Use real Google Drive folder ID from company config
@@ -116,7 +121,7 @@ export function DeliveryPanel() {
       },
     }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [budget.id, budget.customer.email, budget.companyId, settings.fileFormat, budget.meta.responsable, budget.meta.sellerSignature]);
+  }, [budget.id, budget.customer.email, budget.companyId, settings.fileFormat, budget.meta.responsable, generatedEmailBody]);
   
   /**
    * El usuario pega los encabezados del correo original (o sólo su Message-ID).
@@ -530,10 +535,7 @@ export function DeliveryPanel() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => {
-                    const body = buildBudgetEmailBody(budget);
-                    setSettings(prev => ({ ...prev, emailBody: body }));
-                  }}
+                  onClick={() => setSettings(prev => ({ ...prev, emailBody: generatedEmailBody }))}
                   disabled={isRunning}
                   className="text-xs"
                 >

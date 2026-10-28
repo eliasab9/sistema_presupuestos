@@ -451,11 +451,27 @@ export function NewEquipmentForm() {
             </div>
             <div>
               <Label className="text-xs">Atención</Label>
-              <Input
-                value={customer.attention || ''}
-                onChange={(e) => setCustomer({ attention: e.target.value })}
-                placeholder="Persona de contacto"
-              />
+              <div className="flex gap-1.5">
+                <Input
+                  value={customer.attention || ''}
+                  onChange={(e) => setCustomer({ attention: e.target.value })}
+                  placeholder="Persona de contacto"
+                />
+                {/* Tratamiento para el saludo del correo ("Estimado"/"Estimada").
+                    Sin elegir sale neutro: "Estimado/a". */}
+                {(['sr', 'sra'] as const).map((t) => (
+                  <Button
+                    key={t}
+                    type="button"
+                    variant={customer.attentionTitle === t ? 'default' : 'outline'}
+                    className="px-2.5 shrink-0"
+                    title={t === 'sr' ? 'Saludar "Estimado"' : 'Saludar "Estimada"'}
+                    onClick={() => setCustomer({ attentionTitle: customer.attentionTitle === t ? undefined : t })}
+                  >
+                    {t === 'sr' ? 'Sr.' : 'Sra.'}
+                  </Button>
+                ))}
+              </div>
             </div>
             <div>
               <Label className="text-xs">Email</Label>
