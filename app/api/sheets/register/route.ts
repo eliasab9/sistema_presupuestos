@@ -28,7 +28,10 @@ const registerSchema = z.object({
  * Estrategia:
  *   1. Buscar la fila donde A = budgetNumber y B está vacía → es el slot que
  *      dejó reserve-number para este presupuesto.
- *   2. Fallback: si no existe (p. ej. la reserva falló), tomar el próximo slot libre.
+ *   2. Buscar la fila donde A = budgetNumber aunque ya esté completa: es un
+ *      presupuesto reabierto y reenviado, y tiene que pisar su propia fila en
+ *      vez de agregar una nueva con el mismo número.
+ *   3. Fallback: si no existe (p. ej. la reserva falló), tomar el próximo slot libre.
  */
 async function findTargetRow(
   accessToken: string,
@@ -38,13 +41,19 @@ async function findTargetRow(
 ): Promise<number> {
   const rows = await readBudgetRows(accessToken, spreadsheetId, sheetName);
 
+  let registeredRow: number | null = null;
+
   for (let i = 1; i < rows.length; i++) {
     const colA = rows[i]?.[0]?.trim() ?? '';
     const colB = rows[i]?.[1]?.trim() ?? '';
-    if (colA === budgetNumber && colB === '') {
+    if (colA !== budgetNumber) continue;
+    if (colB === '') {
       return i + 1; // rowNumber 1-based para Sheets API
     }
+    if (registeredRow === null) registeredRow = i + 1;
   }
+
+  if (registeredRow !== null) return registeredRow;
 
   return findNextBudgetSlot(rows).rowNumber;
 }

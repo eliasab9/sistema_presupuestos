@@ -168,12 +168,16 @@ export function NewEquipmentDeliveryPanel() {
     // tentativo: si otra sesión envió en el medio, este presupuesto tomaría el
     // mismo. Reservarlo al confirmar cierra esa ventana.
     let budgetToSend = budget;
-    const reserved = await reserveBudgetNumber(budget.companyId);
-    if (reserved && reserved !== budget.meta.number) {
-      setMeta({ number: reserved });
-      budgetToSend = { ...budget, meta: { ...budget.meta, number: reserved } };
-      // El nombre del archivo lleva el número, hay que rearmarlo.
-      effective = { ...effective, fileName: buildNewEquipmentFileName(budgetToSend) };
+    // Un presupuesto reabierto ya tiene número y fila propia en la planilla:
+    // reservar de nuevo lo renumeraría y dejaría una fila duplicada.
+    if (!budget.sentAt) {
+      const reserved = await reserveBudgetNumber(budget.companyId);
+      if (reserved && reserved !== budget.meta.number) {
+        setMeta({ number: reserved });
+        budgetToSend = { ...budget, meta: { ...budget.meta, number: reserved } };
+        // El nombre del archivo lleva el número, hay que rearmarlo.
+        effective = { ...effective, fileName: buildNewEquipmentFileName(budgetToSend) };
+      }
     }
 
     const result = await runDeliveryWorkflowInternal(effective, budgetToSend);
@@ -190,7 +194,8 @@ export function NewEquipmentDeliveryPanel() {
         fileFormat: effective.fileFormat,
       }).catch((e) => console.error('Failed to sync sent equipo_nuevo budget to DB:', e));
     }
-    if (result.steps.generate.success) refreshBudgetNumber();
+    // Un presupuesto reabierto conserva su número: refrescarlo lo renumeraría.
+    if (result.steps.generate.success && !budget.sentAt) refreshBudgetNumber();
   };
 
   const runDeliveryWorkflowInternal = async (

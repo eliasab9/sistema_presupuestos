@@ -205,12 +205,16 @@ export function DeliveryPanel() {
     // withSyncedSections vuelca lo editado del equipo activo a allSections: es
     // lo único que se persiste, y sin esto el presupuesto se guarda vacío.
     let budgetToSend = withSyncedSections(budget);
-    const reserved = await reserveBudgetNumber(budget.companyId);
-    if (reserved && reserved !== budget.meta.number) {
-      setMeta({ number: reserved });
-      budgetToSend = { ...budgetToSend, meta: { ...budget.meta, number: reserved } };
-      // El nombre del archivo lleva el número, hay que rearmarlo.
-      effective = { ...effective, fileName: buildBudgetFileName(budgetToSend, effective.fileFormat) };
+    // Un presupuesto reabierto ya tiene número y fila propia en la planilla:
+    // reservar de nuevo lo renumeraría y dejaría una fila duplicada.
+    if (!budget.sentAt) {
+      const reserved = await reserveBudgetNumber(budget.companyId);
+      if (reserved && reserved !== budget.meta.number) {
+        setMeta({ number: reserved });
+        budgetToSend = { ...budgetToSend, meta: { ...budget.meta, number: reserved } };
+        // El nombre del archivo lleva el número, hay que rearmarlo.
+        effective = { ...effective, fileName: buildBudgetFileName(budgetToSend, effective.fileFormat) };
+      }
     }
 
     const result = await runDeliveryWorkflow(
@@ -254,8 +258,10 @@ export function DeliveryPanel() {
         setWorkflowResult(null);
         setWorkflowState(createInitialWorkflowState());
       }, 1500);
-    } else if (pendingAction === 'full' && result.steps.generate.success) {
-      // Partial success: file generated but a step failed. Refresh number so retries don't reuse it.
+    } else if (pendingAction === 'full' && result.steps.generate.success && !budget.sentAt) {
+      // Éxito parcial en un presupuesto nuevo: el archivo salió pero un paso falló,
+      // así que se refresca el número para que el reintento no reutilice el mismo.
+      // Un presupuesto reabierto conserva el suyo: no se renumera nunca.
       refreshBudgetNumber();
     }
   };
