@@ -60,9 +60,21 @@ export function CustomerManager({ company, onSelectCustomer, onNewBudgetWithoutC
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   
   // Form state
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    name: string;
+    attention: string;
+    attentionTitle: Customer['attentionTitle'];
+    email: string;
+    phone: string;
+    cuit: string;
+    address: string;
+    locality: string;
+    province: string;
+    notes: string;
+  }>({
     name: '',
     attention: '',
+    attentionTitle: undefined,
     email: '',
     phone: '',
     cuit: '',
@@ -94,6 +106,7 @@ export function CustomerManager({ company, onSelectCustomer, onNewBudgetWithoutC
     setFormData({
       name: '',
       attention: '',
+      attentionTitle: undefined,
       email: '',
       phone: '',
       cuit: '',
@@ -114,6 +127,7 @@ export function CustomerManager({ company, onSelectCustomer, onNewBudgetWithoutC
     setFormData({
       name: customer.name,
       attention: customer.attention || '',
+      attentionTitle: customer.attentionTitle,
       email: customer.email || '',
       phone: customer.phone || '',
       cuit: customer.cuit || '',
@@ -312,12 +326,31 @@ export function CustomerManager({ company, onSelectCustomer, onNewBudgetWithoutC
               
               <div>
                 <Label htmlFor="attention">Atención</Label>
-                <Input
-                  id="attention"
-                  value={formData.attention}
-                  onChange={(e) => setFormData({ ...formData, attention: e.target.value })}
-                  placeholder="Nombre del contacto"
-                />
+                <div className="flex gap-1.5">
+                  <Input
+                    id="attention"
+                    value={formData.attention}
+                    onChange={(e) => setFormData({ ...formData, attention: e.target.value })}
+                    placeholder="Contacto"
+                  />
+                  {/* Tratamiento para el saludo del correo ("Estimado"/"Estimada").
+                      Sin elegir sale neutro: "Estimado/a". */}
+                  {(['sr', 'sra'] as const).map((t) => (
+                    <Button
+                      key={t}
+                      type="button"
+                      variant={formData.attentionTitle === t ? 'default' : 'outline'}
+                      className="px-2.5 shrink-0"
+                      title={t === 'sr' ? 'Saludar "Estimado"' : 'Saludar "Estimada"'}
+                      onClick={() => setFormData({
+                        ...formData,
+                        attentionTitle: formData.attentionTitle === t ? undefined : t,
+                      })}
+                    >
+                      {t === 'sr' ? 'Sr.' : 'Sra.'}
+                    </Button>
+                  ))}
+                </div>
               </div>
               
               <div>

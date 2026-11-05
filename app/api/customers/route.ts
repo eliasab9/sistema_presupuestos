@@ -33,12 +33,12 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const { name, attention, email, phone, cuit, address, locality, province, notes, companyId } =
+  const { name, attention, attentionTitle, email, phone, cuit, address, locality, province, notes, companyId } =
     body;
 
   const [customer] = await db
     .insert(customers)
-    .values({ name, attention, email, phone, cuit, address, locality, province, notes, companyId })
+    .values({ name, attention, attentionTitle, email, phone, cuit, address, locality, province, notes, companyId })
     .returning();
 
   return NextResponse.json(customer, { status: 201 });

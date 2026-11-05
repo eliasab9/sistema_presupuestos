@@ -41,6 +41,7 @@ export const customers = pgTable('customers', {
   companyId: text('company_id'),             // nullable → shared across companies
   name:      text('name').notNull(),
   attention: text('attention'),              // Persona de contacto (Atención a:)
+  attentionTitle: text('attention_title'),   // 'sr' | 'sra' → saludo del correo
   email:     text('email'),
   phone:     text('phone'),
   cuit:      text('cuit'),
@@ -98,6 +99,7 @@ export const budgets = pgTable('budgets', {
   currency:           text('currency').notNull().default('ARS'), // 'ARS' | 'USD'
   paymentTerms:       text('payment_terms'),
   commercialValidity: text('commercial_validity'),
+  deliveryTime:       text('delivery_time'),
   generalNotes:       text('general_notes'),
   ivaCondition:       text('iva_condition'),
   pideNumber:         text('pide_number'),

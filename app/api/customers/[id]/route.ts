@@ -12,12 +12,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { name, attention, email, phone, cuit, address, locality, province, notes, companyId } =
+  const { name, attention, attentionTitle, email, phone, cuit, address, locality, province, notes, companyId } =
     await request.json();
 
   const [customer] = await db
     .update(customers)
-    .set({ name, attention, email, phone, cuit, address, locality, province, notes, companyId, updatedAt: new Date() })
+    .set({ name, attention, attentionTitle, email, phone, cuit, address, locality, province, notes, companyId, updatedAt: new Date() })
     .where(eq(customers.id, id))
     .returning();
 

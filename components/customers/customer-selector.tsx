@@ -92,6 +92,7 @@ export function CustomerSelector({ value, onChange, onSaveCustomer, companyId }:
     const newCustomer = await saveCustomer({
       name: value.name || '',
       attention: value.attention,
+      attentionTitle: value.attentionTitle,
       email: value.email,
       phone: value.phone,
       cuit: value.cuit,
@@ -116,6 +117,7 @@ export function CustomerSelector({ value, onChange, onSaveCustomer, companyId }:
     const updated = await updateCustomer(selectedCustomerId, {
       name: value.name,
       attention: value.attention,
+      attentionTitle: value.attentionTitle,
       email: value.email,
       phone: value.phone,
       cuit: value.cuit,
