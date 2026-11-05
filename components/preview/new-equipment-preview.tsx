@@ -294,6 +294,7 @@ export function NewEquipmentPreview() {
                   </li>
                   {meta.commercialValidity && <li style={{ marginBottom: '3px' }}>Validez: {meta.commercialValidity}.</li>}
                   {meta.paymentTerms && <li style={{ marginBottom: '3px' }}>Forma de pago: {meta.paymentTerms}.</li>}
+                  {meta.deliveryTime && <li style={{ marginBottom: '3px' }}>Plazo de entrega: {meta.deliveryTime}.</li>}
                   {meta.generalNotes && meta.generalNotes.split('\n').map((line, idx) => (
                     <li key={idx} style={{ marginBottom: '3px' }}>{line}</li>
                   ))}

@@ -172,6 +172,7 @@ export interface BudgetMeta {
   currency: 'ARS' | 'USD';
   paymentTerms?: string;
   commercialValidity?: string;
+  deliveryTime?: string; // Plazo de entrega del equipo / la reparación
   generalNotes?: string;
   ivaCondition?: string; // Condición de IVA seleccionada por chip
   pideNumber?: string; // Nº PIDE del equipo a presupuestar
@@ -634,6 +635,9 @@ export interface NewEquipmentBudget {
   totalTax: number;
   totalFinal: number;
   showTotal: boolean; // Whether to display the subtotal row in the budget document
+  // ISO timestamp del último envío exitoso. Si está, el presupuesto ya tomó
+  // número y fila en la planilla: reenviarlo no debe pedir uno nuevo.
+  sentAt?: string;
   createdAt: string;
   updatedAt: string;
 }

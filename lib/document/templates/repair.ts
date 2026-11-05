@@ -234,6 +234,7 @@ export function buildRepairDocxDownloadHtml(budget: Budget, logoBase64: string):
       <li>Tipo de cambio utilizado: $${meta.exchangeRate.toLocaleString('es-AR')} / U$S (referencial a la fecha).</li>
       <li>Validez del presupuesto: ${meta.commercialValidity || '7 días hábiles'}.</li>
       <li>Forma de pago: ${meta.paymentTerms || 'A convenir'}.</li>
+      ${meta.deliveryTime ? `<li>Plazo de entrega: ${meta.deliveryTime}.</li>` : ''}
     </ul>
     ${meta.generalNotes ? `<p style="margin-top: 10px;">${meta.generalNotes}</p>` : ''}
   </div>
@@ -322,6 +323,7 @@ export function buildRepairDocxBlobHtml(budget: Budget, logoBase64: string): str
       <li>Tipo de cambio utilizado: $${meta.exchangeRate.toLocaleString('es-AR')} / U$S.</li>
       <li>Validez: ${meta.commercialValidity || '7 días hábiles'}.</li>
       <li>Forma de pago: ${meta.paymentTerms || 'A convenir'}.</li>
+      ${meta.deliveryTime ? `<li>Plazo de entrega: ${meta.deliveryTime}.</li>` : ''}
     </ul>
     ${meta.generalNotes ? `<p style="margin-top: 10px;">${meta.generalNotes}</p>` : ''}
   </div>

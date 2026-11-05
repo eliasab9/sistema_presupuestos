@@ -60,6 +60,7 @@ function createEmptyBudget(): NewEquipmentBudget {
       currency: 'ARS',
       paymentTerms: '',
       commercialValidity: '',
+      deliveryTime: '',
       generalNotes: '',
     },
     customer: {},

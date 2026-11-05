@@ -18,7 +18,8 @@ import { Trash2, Zap, Droplets, Settings, Gauge, Package, ChevronsUpDown, Check,
 import { NEW_EQUIPMENT_TYPE_LABELS, newEquipmentLabel, type NewEquipmentType, type NewEquipmentItem } from '@/types/budget';
 import { NewEquipmentDeliveryPanel } from '@/components/delivery/new-equipment-delivery-panel';
 import { SellerPicker, type SellerFromApi } from '@/components/forms/sections/seller-picker';
-import { IVA_CONDITION_REDUCED, IVA_CONDITION_GENERAL } from '@/lib/pricing/calculations';
+import { CommercialConditionsFields } from '@/components/forms/sections/commercial-conditions-section';
+import { ObservationsFields } from '@/components/forms/sections/observations-section';
 import { cn } from '@/lib/utils';
 
 const EQUIPMENT_ICONS: Record<NewEquipmentType, React.ReactNode> = {
@@ -663,67 +664,26 @@ export function NewEquipmentForm() {
 
         <Separator />
 
-        {/* Payment Terms */}
+        {/* Condiciones comerciales — mismos chips que reparación, pero sin la
+            opción "Ambos": una venta lleva una sola alícuota. */}
+        <section>
+          <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
+            Condiciones Comerciales
+          </h3>
+          <CommercialConditionsFields meta={meta} setMeta={setMeta} allowSplitIva={false} />
+        </section>
+
+        <Separator />
+
         <section>
           <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
             Observaciones
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs">Validez Comercial</Label>
-              <Input
-                value={meta.commercialValidity || ''}
-                onChange={(e) => setMeta({ commercialValidity: e.target.value })}
-                placeholder="7 días hábiles"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Forma de Pago</Label>
-              <Input
-                value={meta.paymentTerms || ''}
-                onChange={(e) => setMeta({ paymentTerms: e.target.value })}
-                placeholder="A convenir"
-              />
-            </div>
-          </div>
-          {/* Condición de IVA. Una sola alícuota: la venta de un equipo no se
-              parte entre bobinado y materiales como una reparación. */}
-          <div className="mt-3">
-            <Label className="text-xs">Condición de IVA</Label>
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {[IVA_CONDITION_REDUCED, IVA_CONDITION_GENERAL].map((opt) => {
-                const isActive = meta.ivaCondition === opt;
-                return (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() => setMeta({ ivaCondition: isActive ? '' : opt })}
-                    className={cn(
-                      'px-2.5 py-1 text-xs rounded-md border transition-colors',
-                      isActive
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : 'bg-background text-muted-foreground hover:bg-muted'
-                    )}
-                  >
-                    {opt}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-1.5">
-              Sin alícuota elegida el presupuesto sale neto, sin tabla de IVA.
-            </p>
-          </div>
-          <div className="mt-3">
-            <Label className="text-xs">Observaciones Generales</Label>
-            <Textarea
-              value={meta.generalNotes || ''}
-              onChange={(e) => setMeta({ generalNotes: e.target.value })}
-              placeholder="Notas adicionales para el presupuesto..."
-              rows={3}
-              className="resize-none bg-white"
-            />
-          </div>
+          <ObservationsFields
+            value={meta.generalNotes ?? ''}
+            onChange={(v) => setMeta({ generalNotes: v })}
+            companyId={budget.companyId}
+          />
         </section>
 
         <Separator />

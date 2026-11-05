@@ -76,6 +76,7 @@ function createInitialBudget(): Budget {
       currency: 'ARS',
       paymentTerms: '',
       commercialValidity: '',
+      deliveryTime: '',
       generalNotes: '',
       ivaCondition: '',
       responsable: 'Elías',

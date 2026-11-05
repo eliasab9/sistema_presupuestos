@@ -112,6 +112,7 @@ function rehydrateRepairBudgetFromRow(row: Record<string, unknown>): Budget {
       currency: (row.currency as Budget['meta']['currency']) ?? 'ARS',
       paymentTerms: (row.paymentTerms as string) ?? undefined,
       commercialValidity: (row.commercialValidity as string) ?? undefined,
+      deliveryTime: (row.deliveryTime as string) ?? undefined,
       generalNotes: (row.generalNotes as string) ?? undefined,
       ivaCondition: (row.ivaCondition as string) ?? undefined,
       pideNumber: (row.pideNumber as string) ?? undefined,
@@ -155,6 +156,7 @@ function rehydrateNewEquipmentBudgetFromRow(row: Record<string, unknown>): NewEq
       currency: (row.currency as NewEquipmentBudget['meta']['currency']) ?? 'ARS',
       paymentTerms: (row.paymentTerms as string) ?? undefined,
       commercialValidity: (row.commercialValidity as string) ?? undefined,
+      deliveryTime: (row.deliveryTime as string) ?? undefined,
       generalNotes: (row.generalNotes as string) ?? undefined,
       ivaCondition: (row.ivaCondition as string) ?? undefined,
       pideNumber: (row.pideNumber as string) ?? undefined,
@@ -168,6 +170,7 @@ function rehydrateNewEquipmentBudgetFromRow(row: Record<string, unknown>): NewEq
     totalTax: Number(row.totalTax ?? 0),
     totalFinal: Number(row.totalFinal ?? 0),
     showTotal: true,
+    sentAt: typeof row.sentAt === 'string' ? row.sentAt : (row.sentAt instanceof Date ? row.sentAt.toISOString() : undefined),
     createdAt: typeof row.createdAt === 'string' ? row.createdAt : new Date().toISOString(),
     updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : new Date().toISOString(),
   };
@@ -320,7 +323,8 @@ function BudgetApp() {
         fileName: buildBudgetFileName(budget, 'pdf'),
         fileFormat: 'pdf',
       })
-        .then(() => refreshBudgetNumber())
+        // Un presupuesto reabierto conserva su número: refrescarlo lo renumeraría.
+        .then(() => { if (!budget.sentAt) refreshBudgetNumber(); })
         .catch((e) => console.error('Failed to sync exported PDF to DB:', e));
       toast.success('PDF exportado correctamente');
     } catch (error) {
@@ -346,8 +350,11 @@ function BudgetApp() {
         fileName: buildBudgetFileName(budget, 'docx'),
         fileFormat: 'docx',
       }).catch((e) => console.error('Failed to sync exported DOCX to DB:', e));
-      // Registrar en Sheets y refrescar número para el próximo presupuesto
-      registerRepairBudgetInSheets(budget).then(() => refreshBudgetNumber());
+      // Registrar en Sheets. Un presupuesto reabierto pisa su propia fila y
+      // conserva su número; sólo los nuevos pasan al siguiente del contador.
+      registerRepairBudgetInSheets(budget).then(() => {
+        if (!budget.sentAt) refreshBudgetNumber();
+      });
       toast.success('Documento exportado correctamente');
     } catch (error) {
       console.error('Error exporting DOCX:', error);

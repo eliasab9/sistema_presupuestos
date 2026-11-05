@@ -415,6 +415,8 @@ export function BudgetPreview() {
                   {/* Sin condición elegida no se inventa una alícuota. */}
                   <p style={{ margin: '2px 0' }}>• Precios expresados en pesos argentinos{meta.ivaCondition ? `. IVA: ${meta.ivaCondition}` : ', netos de IVA'}.</p>
                   <p style={{ margin: '2px 0' }}>• TC utilizado: ${meta.exchangeRate.toLocaleString('es-AR')} / U$S (referencial). Validez: {meta.commercialValidity || '7 días hábiles'}. Pago: {meta.paymentTerms || 'A convenir'}.</p>
+                  {/* Sin plazo cargado no se inventa uno. */}
+                  {meta.deliveryTime && <p style={{ margin: '2px 0' }}>• Plazo de entrega: {meta.deliveryTime}.</p>}
                   {meta.generalNotes && (
                     <p style={{ marginTop: '4px', whiteSpace: 'pre-line' }}>{meta.generalNotes}</p>
                   )}

@@ -13,6 +13,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { FileText, BookmarkPlus, FolderOpen, Trash2, Plus } from 'lucide-react';
+import type { CompanyId } from '@/types/budget';
 import { toast } from 'sonner';
 import {
   getAllTemplates,
@@ -21,10 +22,18 @@ import {
   type ObservationTemplate,
 } from '@/lib/storage/observation-templates';
 
-export function ObservationsSection() {
-  const { budget, setMeta } = useBudget();
-  const { meta } = budget;
-  const companyId = budget.companyId;
+interface ObservationsFieldsProps {
+  value: string;
+  onChange: (value: string) => void;
+  companyId: CompanyId;
+}
+
+/**
+ * Textarea de observaciones con el manejo de plantillas, sin contenedor: cada
+ * formulario lo envuelve con su propio encabezado (Card en reparación, section
+ * en equipo nuevo). Las plantillas se comparten por empresa entre los dos.
+ */
+export function ObservationsFields({ value, onChange, companyId }: ObservationsFieldsProps) {
   const [templates, setTemplates] = useState<ObservationTemplate[]>([]);
   const [openLoad, setOpenLoad] = useState(false);
   const [openSave, setOpenSave] = useState(false);
@@ -39,11 +48,10 @@ export function ObservationsSection() {
   }, [refreshTemplates]);
 
   const handleInsert = (template: ObservationTemplate, mode: 'replace' | 'append') => {
-    const current = meta.generalNotes ?? '';
     const next = mode === 'replace'
       ? template.content
-      : (current.trim() ? `${current}\n${template.content}` : template.content);
-    setMeta({ generalNotes: next });
+      : (value.trim() ? `${value}\n${template.content}` : template.content);
+    onChange(next);
     setOpenLoad(false);
     toast.success(`Plantilla "${template.name}" insertada`);
   };
@@ -55,7 +63,7 @@ export function ObservationsSection() {
   };
 
   const handleSaveTemplate = async () => {
-    const content = (meta.generalNotes ?? '').trim();
+    const content = value.trim();
     const name = newTemplateName.trim();
     if (!name) {
       toast.error('Ponele un nombre a la plantilla');
@@ -73,17 +81,10 @@ export function ObservationsSection() {
   };
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <FileText className="h-5 w-5" />
-          Observaciones
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center justify-between mb-2">
-          <Label htmlFor="general-notes">Observaciones Generales</Label>
-          <div className="flex items-center gap-1">
+    <>
+      <div className="flex items-center justify-between mb-2">
+        <Label htmlFor="general-notes">Observaciones Generales</Label>
+        <div className="flex items-center gap-1">
             <Popover open={openLoad} onOpenChange={setOpenLoad}>
               <PopoverTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">
@@ -170,16 +171,37 @@ export function ObservationsSection() {
                 </div>
               </PopoverContent>
             </Popover>
-          </div>
         </div>
+      </div>
 
-        <Textarea
-          id="general-notes"
-          value={meta.generalNotes ?? ''}
-          onChange={(e) => setMeta({ generalNotes: e.target.value })}
-          placeholder="Notas adicionales para este presupuesto..."
-          rows={4}
-          className="resize-none bg-white"
+      <Textarea
+        id="general-notes"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Notas adicionales para este presupuesto..."
+        rows={4}
+        className="resize-none bg-white"
+      />
+    </>
+  );
+}
+
+export function ObservationsSection() {
+  const { budget, setMeta } = useBudget();
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <FileText className="h-5 w-5" />
+          Observaciones
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ObservationsFields
+          value={budget.meta.generalNotes ?? ''}
+          onChange={(v) => setMeta({ generalNotes: v })}
+          companyId={budget.companyId}
         />
       </CardContent>
     </Card>
