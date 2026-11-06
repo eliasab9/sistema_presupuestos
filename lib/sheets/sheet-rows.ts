@@ -127,6 +127,41 @@ function isMonthSeparator(rows: string[][], row: number): boolean {
  * Nunca se escribe en una fila en blanco ni en un separador de mes, así que los
  * espaciadores de la planilla quedan donde están.
  */
+export interface TargetRow {
+  /** Número de fila 1-based, que es lo que espera la API de Sheets. */
+  rowNumber: number;
+  /**
+   * Fecha de solicitud que ya tenía la fila, si estaba registrada. El reenvío
+   * de un presupuesto reabierto la conserva: la columna B dice cuándo lo pidió
+   * el cliente, no cuándo se mandó el archivo por última vez.
+   */
+  existingDate: string | null;
+}
+
+/**
+ * Encuentra la fila donde registrar el presupuesto con el número dado.
+ *
+ *   1. Fila con A = budgetNumber y B vacía → es el slot que dejó reserve-number.
+ *   2. Fila con A = budgetNumber ya completa → presupuesto reabierto y reenviado:
+ *      pisa su propia fila en vez de agregar otra con el mismo número, y devuelve
+ *      su fecha original para no sobrescribirla.
+ *   3. Fallback: si no existe (p. ej. falló la reserva), el próximo slot libre.
+ */
+export function findTargetRow(rows: string[][], budgetNumber: string): TargetRow {
+  let registered: TargetRow | null = null;
+
+  for (let i = 1; i < rows.length; i++) {
+    if (cell(rows, i, 0) !== budgetNumber) continue;
+    const colB = cell(rows, i, 1);
+    if (colB === '') return { rowNumber: i + 1, existingDate: null };
+    if (registered === null) registered = { rowNumber: i + 1, existingDate: colB };
+  }
+
+  if (registered !== null) return registered;
+
+  return { rowNumber: findNextBudgetSlot(rows).rowNumber, existingDate: null };
+}
+
 export function findNextBudgetSlot(rows: string[][]): BudgetSlot {
   // Bloque vigente: todo lo que está debajo del último separador de mes.
   let blockStart = 0;

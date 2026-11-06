@@ -7,7 +7,7 @@ import {
   SHEETS_API,
   resolveSheetName,
   readBudgetRows,
-  findNextBudgetSlot,
+  findTargetRow,
 } from '@/lib/sheets/sheet-rows';
 
 const log = createLogger('sheets/register');
@@ -21,42 +21,6 @@ const registerSchema = z.object({
   merchandise:  z.string().optional(),
   responsable:  z.string().optional(),
 });
-
-/**
- * Encuentra la fila donde escribir para el número de presupuesto dado.
- *
- * Estrategia:
- *   1. Buscar la fila donde A = budgetNumber y B está vacía → es el slot que
- *      dejó reserve-number para este presupuesto.
- *   2. Buscar la fila donde A = budgetNumber aunque ya esté completa: es un
- *      presupuesto reabierto y reenviado, y tiene que pisar su propia fila en
- *      vez de agregar una nueva con el mismo número.
- *   3. Fallback: si no existe (p. ej. la reserva falló), tomar el próximo slot libre.
- */
-async function findTargetRow(
-  accessToken: string,
-  spreadsheetId: string,
-  sheetName: string,
-  budgetNumber: string
-): Promise<number> {
-  const rows = await readBudgetRows(accessToken, spreadsheetId, sheetName);
-
-  let registeredRow: number | null = null;
-
-  for (let i = 1; i < rows.length; i++) {
-    const colA = rows[i]?.[0]?.trim() ?? '';
-    const colB = rows[i]?.[1]?.trim() ?? '';
-    if (colA !== budgetNumber) continue;
-    if (colB === '') {
-      return i + 1; // rowNumber 1-based para Sheets API
-    }
-    if (registeredRow === null) registeredRow = i + 1;
-  }
-
-  if (registeredRow !== null) return registeredRow;
-
-  return findNextBudgetSlot(rows).rowNumber;
-}
 
 /**
  * POST /api/sheets/register
@@ -98,13 +62,14 @@ export async function POST(request: NextRequest) {
     const { access_token } = await refreshAccessToken(sheetsConfig.GOOGLE_OAUTH_REFRESH_TOKEN);
     const sheetName = await resolveSheetName(access_token, sheetsConfig.SPREADSHEET_ID, gid);
 
-    // Encontrar la fila donde A = budgetNumber y B está vacía
-    const rowNumber = await findTargetRow(access_token, sheetsConfig.SPREADSHEET_ID, sheetName, budgetNumber);
+    // Fila propia del presupuesto: la reserva libre, o la que ya ocupaba si es un reenvío
+    const rows = await readBudgetRows(access_token, sheetsConfig.SPREADSHEET_ID, sheetName);
+    const { rowNumber, existingDate } = findTargetRow(rows, budgetNumber);
 
     // Columnas A–I: A ya tiene el número pre-populado, completamos el resto
     const row = [
       budgetNumber   ?? '',   // A: Nº de Solicitud (confirma/completa)
-      fechaSolicitud,         // B: Fecha de Solicitud ← esto es lo que "registra" la fila
+      existingDate ?? fechaSolicitud, // B: Fecha de Solicitud ← esto "registra" la fila
       responsable    ?? 'Elías', // C: Responsable
       'Email',                // D: Medio
       clientName     ?? '',   // E: Cliente

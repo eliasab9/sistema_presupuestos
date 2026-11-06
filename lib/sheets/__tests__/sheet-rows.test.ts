@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findNextBudgetSlot } from '../sheet-rows';
+import { findNextBudgetSlot, findTargetRow } from '../sheet-rows';
 
 const HEADER = ['Nº Solicitud', 'Fecha Solicitud'];
 
@@ -151,5 +151,33 @@ describe('findNextBudgetSlot', () => {
       rows[slot.index] = registrada(slot.number, '07/10/2026');
     }
     expect(asignados).toEqual(['11292', '11293', '11303', '11304']);
+  });
+});
+
+describe('findTargetRow', () => {
+  it('usa la reserva que dejó reserve-number (A con número, B vacía)', () => {
+    const rows = [HEADER, registrada('7141', '01/08/2026'), huerfana('7142')];
+    expect(findTargetRow(rows, '7142')).toEqual({ rowNumber: 3, existingDate: null });
+  });
+
+  it('un reenvío pisa su propia fila y conserva la fecha de solicitud original', () => {
+    const rows = [HEADER, registrada('7141', '01/08/2026'), registrada('7142', '02/08/2026')];
+    expect(findTargetRow(rows, '7141')).toEqual({ rowNumber: 2, existingDate: '01/08/2026' });
+  });
+
+  it('prefiere la reserva libre antes que una fila vieja con el mismo número', () => {
+    // El 11149 cargado en la pestaña equivocada no tiene que secuestrar la reserva.
+    const rows = [HEADER, registrada('11149', '05/05/2025'), huerfana('11149')];
+    expect(findTargetRow(rows, '11149')).toEqual({ rowNumber: 3, existingDate: null });
+  });
+
+  it('si el número no está en la planilla cae en el próximo slot libre', () => {
+    const rows = [HEADER, registrada('7141', '01/08/2026')];
+    expect(findTargetRow(rows, '7142')).toEqual({ rowNumber: 3, existingDate: null });
+  });
+
+  it('nunca toma la fila de encabezado aunque A coincida', () => {
+    const rows = [['7141', 'Fecha Solicitud'], registrada('7141', '01/08/2026')];
+    expect(findTargetRow(rows, '7141')).toEqual({ rowNumber: 2, existingDate: '01/08/2026' });
   });
 });
