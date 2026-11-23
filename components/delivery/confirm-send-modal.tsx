@@ -81,7 +81,7 @@ export function ConfirmSendModal({
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Formato</span>
-                  <span className="font-mono font-medium">{eff.fileFormat.toUpperCase()}</span>
+                  <span className="font-mono font-medium">PDF</span>
                 </div>
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-muted-foreground shrink-0">Nombre</span>

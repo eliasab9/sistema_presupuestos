@@ -191,7 +191,7 @@ export function NewEquipmentDeliveryPanel() {
         driveFileId: result.steps.drive.fileId,
         driveWebViewLink: result.steps.drive.webViewLink,
         fileName: effective.fileName,
-        fileFormat: effective.fileFormat,
+        fileFormat: 'pdf',
       }).catch((e) => console.error('Failed to sync sent equipo_nuevo budget to DB:', e));
     }
     // Un presupuesto reabierto conserva su número: refrescarlo lo renumeraría.

@@ -24,13 +24,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useBudget, withSyncedSections } from '@/lib/budget-context';
 import { COMPANIES } from '@/types/budget';
 import { saveBudget } from '@/lib/storage/budgets';
@@ -38,11 +31,10 @@ import { syncSentBudgetToDb } from '@/lib/storage/budgets-api';
 import { WorkflowProgress } from './workflow-progress';
 import { ConfirmSendModal } from './confirm-send-modal';
 import { toast as showToast } from 'sonner';
-import type { 
-  DeliverySettings, 
-  DeliveryWorkflowState, 
+import type {
+  DeliverySettings,
+  DeliveryWorkflowState,
   DeliveryWorkflowResult,
-  FileFormat,
 } from '@/types/delivery';
 import { 
   getDefaultDeliverySettings, 
@@ -99,7 +91,7 @@ export function DeliveryPanel() {
 
   // Auto-fill settings based on budget data
   useEffect(() => {
-    const fileName = buildBudgetFileName(budget, settings.fileFormat);
+    const fileName = buildBudgetFileName(budget, 'pdf');
     const emailSubject = buildBudgetEmailSubject(budget);
     const emailBody = generatedEmailBody;
     const emailTo = budget.customer.email || '';
@@ -121,7 +113,7 @@ export function DeliveryPanel() {
       },
     }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [budget.id, budget.customer.email, budget.companyId, settings.fileFormat, budget.meta.responsable, generatedEmailBody]);
+  }, [budget.id, budget.customer.email, budget.companyId, budget.meta.responsable, generatedEmailBody]);
   
   /**
    * El usuario pega los encabezados del correo original (o sólo su Message-ID).
@@ -138,16 +130,6 @@ export function DeliveryPanel() {
     }));
   };
 
-  // Update file name when format changes
-  const handleFormatChange = (format: FileFormat) => {
-    const fileName = buildBudgetFileName(budget, format);
-    setSettings(prev => ({
-      ...prev,
-      fileFormat: format,
-      fileName,
-    }));
-  };
-  
   // Validate before running
   const validate = useCallback(() => {
     const result = validateDeliverySettings(budget, settings);
@@ -213,7 +195,7 @@ export function DeliveryPanel() {
         setMeta({ number: reserved });
         budgetToSend = { ...budgetToSend, meta: { ...budget.meta, number: reserved } };
         // El nombre del archivo lleva el número, hay que rearmarlo.
-        effective = { ...effective, fileName: buildBudgetFileName(budgetToSend, effective.fileFormat) };
+        effective = { ...effective, fileName: buildBudgetFileName(budgetToSend, 'pdf') };
       }
     }
 
@@ -246,7 +228,7 @@ export function DeliveryPanel() {
         driveFileId: result.steps.drive.fileId,
         driveWebViewLink: result.steps.drive.webViewLink,
         fileName: effective.fileName,
-        fileFormat: effective.fileFormat,
+        fileFormat: 'pdf',
         emailThreadId: effective.emailThread?.threadId,
         emailMessageId: effective.emailThread?.messageId,
         emailReferences: effective.emailThread?.references,
@@ -357,46 +339,28 @@ export function DeliveryPanel() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Format and File Name */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>Formato del archivo</Label>
-            <Select 
-              value={settings.fileFormat} 
-              onValueChange={(v) => handleFormatChange(v as FileFormat)}
+        {/* Nombre del archivo — el formato no se elige: el envío es siempre PDF. */}
+        <div className="space-y-2">
+          <Label>Nombre del archivo (PDF)</Label>
+          <div className="flex gap-2">
+            <Input
+              value={settings.fileName}
+              onChange={(e) => setSettings(prev => ({ ...prev, fileName: e.target.value }))}
               disabled={isRunning}
+              className="flex-1"
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => {
+                const fileName = buildBudgetFileName(budget, 'pdf');
+                setSettings(prev => ({ ...prev, fileName }));
+              }}
+              disabled={isRunning}
+              title="Regenerar nombre"
             >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pdf">PDF</SelectItem>
-                <SelectItem value="docx">DOCX (Word)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Nombre del archivo</Label>
-            <div className="flex gap-2">
-              <Input
-                value={settings.fileName}
-                onChange={(e) => setSettings(prev => ({ ...prev, fileName: e.target.value }))}
-                disabled={isRunning}
-                className="flex-1"
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => {
-                  const fileName = buildBudgetFileName(budget, settings.fileFormat);
-                  setSettings(prev => ({ ...prev, fileName }));
-                }}
-                disabled={isRunning}
-                title="Regenerar nombre"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </Button>
-            </div>
+              <RefreshCw className="w-4 h-4" />
+            </Button>
           </div>
         </div>
         

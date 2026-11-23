@@ -20,7 +20,7 @@ import type {
   DeliveryStep,
 } from '@/types/delivery';
 import { createInitialWorkflowState } from '@/types/delivery';
-import { exportToPDFBlob, exportToDocxBlob } from '@/lib/document/export-pdf';
+import { exportToPDFBlob } from '@/lib/document/export-pdf';
 import { uploadFileToDrive } from './google-drive';
 import { sendBudgetEmail } from './email-service';
 import { parseEmailList } from './email-builder';
@@ -31,7 +31,8 @@ export type WorkflowProgressCallback = (state: DeliveryWorkflowState) => void;
 
 // Optional adapters to override default file generation and sheets registration
 export interface WorkflowAdapters {
-  generateFile?: (format: 'pdf' | 'docx') => Promise<Blob>;
+  /** El formato siempre es 'pdf': el envío no admite otro. */
+  generateFile?: (format: 'pdf') => Promise<Blob>;
   registerInSheets?: () => Promise<void>;
 }
 
@@ -151,18 +152,15 @@ export async function runDeliveryWorkflow(
     
     let fileBlob: Blob;
     try {
-      if (adapters?.generateFile) {
-        fileBlob = await adapters.generateFile(settings.fileFormat);
-      } else if (settings.fileFormat === 'pdf') {
-        fileBlob = await exportToPDFBlob(budget as Budget);
-      } else {
-        fileBlob = await exportToDocxBlob(budget as Budget);
-      }
+      // Siempre PDF: es el único formato que se le manda al cliente.
+      fileBlob = adapters?.generateFile
+        ? await adapters.generateFile('pdf')
+        : await exportToPDFBlob(budget as Budget);
 
       const generatedFile: GeneratedBudgetFile = {
         id: `file_${Date.now()}`,
         name: settings.fileName,
-        format: settings.fileFormat,
+        format: 'pdf',
         blob: fileBlob,
         size: fileBlob.size,
         createdAt: new Date().toISOString(),

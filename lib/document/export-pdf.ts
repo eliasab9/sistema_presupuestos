@@ -2,7 +2,7 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import type { Budget, NewEquipmentBudget } from '@/types/budget';
 import { COMPANIES } from '@/types/budget';
-import { buildRepairDocxDownloadHtml, buildRepairDocxBlobHtml } from './templates/repair';
+import { buildRepairDocxDownloadHtml } from './templates/repair';
 
 // Convert any color to hex format for html2canvas compatibility
 function convertToHex(color: string): string {
@@ -216,19 +216,6 @@ export async function exportToPDFBlob(budget: Budget): Promise<Blob> {
   } finally {
     document.body.removeChild(clone);
   }
-}
-
-/**
- * Export budget to DOCX and return as Blob (for workflow use)
- */
-export async function exportToDocxBlob(budget: Budget): Promise<Blob> {
-  const company = COMPANIES[budget.companyId];
-  const logoBase64 = await imageToBase64(company.logo);
-  const htmlContent = buildRepairDocxBlobHtml(budget, logoBase64);
-
-  return new Blob(['\ufeff' + htmlContent], {
-    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  });
 }
 
 /**

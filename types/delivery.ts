@@ -83,7 +83,8 @@ export interface EmailSendResult {
 
 export interface DeliverySettings {
   // File settings
-  fileFormat: FileFormat;
+  // No hay `fileFormat`: todo lo que se envía (Drive y correo) va en PDF. El
+  // DOCX existe sólo como descarga local para editarlo a mano.
   fileName: string;
   
   // Drive settings
@@ -138,7 +139,6 @@ export const DEFAULT_EMAIL_SUBJECT = 'Presupuesto reparación';
 
 export function getDefaultDeliverySettings(): DeliverySettings {
   return {
-    fileFormat: 'pdf',
     fileName: '',
     saveToDrive: true,
     driveDestination: { ...DEFAULT_DRIVE_DESTINATION },
