@@ -59,7 +59,7 @@ export function NewEquipmentPreview() {
       ? `U$S ${(amount / meta.exchangeRate).toFixed(2)}`
       : formatCurrency(amount);
 
-  const iva = calculateNewEquipmentIvaBreakdown(subtotalItems, meta.ivaCondition);
+  const iva = calculateNewEquipmentIvaBreakdown(items, meta.ivaCondition);
 
   const getEquipmentDescription = (item: typeof items[0]) => {
     const parts: string[] = [newEquipmentLabel(item)];
@@ -288,10 +288,10 @@ export function NewEquipmentPreview() {
                 }}>
                   Observaciones
                 </h3>
+                {/* La alícuota no se menciona acá: con equipos a 10,5 % y a 21 %
+                    una sola línea sería falsa. El detalle lo da la tabla de
+                    Discriminación de IVA. */}
                 <ul style={{ fontSize: '9px', color: '#555', margin: 0, paddingLeft: '15px' }}>
-                  <li style={{ marginBottom: '3px' }}>
-                    Precios {meta.ivaCondition ? `con IVA ${meta.ivaCondition} discriminado aparte` : 'netos de IVA'}.
-                  </li>
                   {meta.commercialValidity && <li style={{ marginBottom: '3px' }}>Validez: {meta.commercialValidity}.</li>}
                   {meta.paymentTerms && <li style={{ marginBottom: '3px' }}>Forma de pago: {meta.paymentTerms}.</li>}
                   {meta.deliveryTime && <li style={{ marginBottom: '3px' }}>Plazo de entrega: {meta.deliveryTime}.</li>}

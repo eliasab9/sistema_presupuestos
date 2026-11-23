@@ -186,26 +186,82 @@ describe('calculateIvaBreakdown', () => {
 });
 
 describe('calculateNewEquipmentIvaBreakdown', () => {
+  /** Un equipo que hereda la alícuota del chip. */
+  const equipo = (subtotalARS: number) => ({ subtotalARS });
+
   it('aplica el 21% en una sola fila', () => {
-    const iva = calculateNewEquipmentIvaBreakdown(1_000_000, IVA_CONDITION_GENERAL)!;
+    const iva = calculateNewEquipmentIvaBreakdown([equipo(1_000_000)], IVA_CONDITION_GENERAL)!;
     expect(iva.lines).toEqual([{ label: 'Total — 21%', base: 1_000_000, iva: 210_000 }]);
     expect(iva.gross).toBe(1_210_000);
   });
 
   it('aplica el 10,5% en una sola fila', () => {
-    const iva = calculateNewEquipmentIvaBreakdown(1_000_000, IVA_CONDITION_REDUCED)!;
+    const iva = calculateNewEquipmentIvaBreakdown([equipo(1_000_000)], IVA_CONDITION_REDUCED)!;
     expect(iva.lines).toEqual([{ label: 'Total — 10,5%', base: 1_000_000, iva: 105_000 }]);
     expect(iva.gross).toBe(1_105_000);
   });
 
-  it('rechaza el modo combinado: un equipo nuevo no se parte en dos alícuotas', () => {
-    expect(calculateNewEquipmentIvaBreakdown(1_000_000, IVA_CONDITION_SPLIT)).toBeNull();
+  it('suma varios equipos que heredan la misma alícuota en una fila', () => {
+    const iva = calculateNewEquipmentIvaBreakdown(
+      [equipo(600_000), equipo(400_000)], IVA_CONDITION_GENERAL
+    )!;
+    expect(iva.lines).toEqual([{ label: 'Total — 21%', base: 1_000_000, iva: 210_000 }]);
+  });
+
+  it('agrupa en dos filas cuando los equipos mezclan alícuotas', () => {
+    const iva = calculateNewEquipmentIvaBreakdown(
+      [{ subtotalARS: 1_000_000, ivaRate: 10.5 }, { subtotalARS: 500_000, ivaRate: 21 }],
+      IVA_CONDITION_GENERAL
+    )!;
+    expect(iva.lines).toEqual([
+      { label: 'Equipos al 10,5%', base: 1_000_000, iva: 105_000 },
+      { label: 'Equipos al 21%',   base:   500_000, iva: 105_000 },
+    ]);
+    expect(iva.net).toBe(1_500_000);
+    expect(iva.ivaTotal).toBe(210_000);
+    expect(iva.gross).toBe(1_710_000);
+  });
+
+  it('ordena siempre 10,5% antes que 21%, sin importar el orden de carga', () => {
+    const iva = calculateNewEquipmentIvaBreakdown(
+      [{ subtotalARS: 500_000, ivaRate: 21 }, { subtotalARS: 1_000_000, ivaRate: 10.5 }],
+      undefined
+    )!;
+    expect(iva.lines.map((l) => l.label)).toEqual(['Equipos al 10,5%', 'Equipos al 21%']);
+  });
+
+  it('el ivaRate del equipo pisa el chip global', () => {
+    const iva = calculateNewEquipmentIvaBreakdown(
+      [{ subtotalARS: 1_000_000, ivaRate: 10.5 }], IVA_CONDITION_GENERAL
+    )!;
+    expect(iva.lines).toEqual([{ label: 'Total — 10,5%', base: 1_000_000, iva: 105_000 }]);
+  });
+
+  it('el chip combinado no da alícuota por defecto: es de reparación', () => {
+    expect(calculateNewEquipmentIvaBreakdown([equipo(1_000_000)], IVA_CONDITION_SPLIT)).toBeNull();
+  });
+
+  it('con todos los equipos marcados a mano no hace falta el chip', () => {
+    const iva = calculateNewEquipmentIvaBreakdown(
+      [{ subtotalARS: 1_000_000, ivaRate: 21 }], undefined
+    )!;
+    expect(iva.lines).toEqual([{ label: 'Total — 21%', base: 1_000_000, iva: 210_000 }]);
+  });
+
+  it('devuelve null si algún equipo queda sin alícuota: la tabla no cerraría', () => {
+    expect(calculateNewEquipmentIvaBreakdown(
+      [{ subtotalARS: 1_000_000, ivaRate: 21 }, equipo(500_000)], undefined
+    )).toBeNull();
   });
 
   it('devuelve null sin alícuota elegida', () => {
-    expect(calculateNewEquipmentIvaBreakdown(1_000_000, undefined)).toBeNull();
-    expect(calculateNewEquipmentIvaBreakdown(1_000_000, '')).toBeNull();
-    expect(calculateNewEquipmentIvaBreakdown(1_000_000, 'exento')).toBeNull();
+    expect(calculateNewEquipmentIvaBreakdown([equipo(1_000_000)], undefined)).toBeNull();
+    expect(calculateNewEquipmentIvaBreakdown([equipo(1_000_000)], '')).toBeNull();
+    expect(calculateNewEquipmentIvaBreakdown([equipo(1_000_000)], 'exento')).toBeNull();
+  });
+
+  it('devuelve null sin equipos cargados', () => {
+    expect(calculateNewEquipmentIvaBreakdown([], IVA_CONDITION_GENERAL)).toBeNull();
   });
 });
 

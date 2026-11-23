@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/popover';
 import { Trash2, Zap, Droplets, Settings, Gauge, Package, ChevronsUpDown, Check, Plus, X, Loader2 } from 'lucide-react';
 import { NEW_EQUIPMENT_TYPE_LABELS, newEquipmentLabel, type NewEquipmentType, type NewEquipmentItem } from '@/types/budget';
+import { defaultNewEquipmentRate } from '@/lib/pricing/calculations';
 import { NewEquipmentDeliveryPanel } from '@/components/delivery/new-equipment-delivery-panel';
 import { SellerPicker, type SellerFromApi } from '@/components/forms/sections/seller-picker';
 import { CommercialConditionsFields } from '@/components/forms/sections/commercial-conditions-section';
@@ -125,7 +126,8 @@ function formatCurrency(amount: number) {
 }
 
 function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
-  const { updateItem, removeItem } = useNewEquipment();
+  const { budget, updateItem, removeItem } = useNewEquipment();
+  const inheritedRate = defaultNewEquipmentRate(budget.meta.ivaCondition);
 
   const renderSpecificFields = () => {
     switch (item.type) {
@@ -314,6 +316,33 @@ function EquipmentItemCard({ item }: { item: NewEquipmentItem }) {
             <div className="h-9 flex items-center px-3 bg-muted rounded-md font-medium">
               {formatCurrency(item.subtotalARS)}
             </div>
+          </div>
+        </div>
+
+        {/* Alícuota de IVA — sólo hay que tocarla si este equipo difiere del chip
+            de Condiciones Comerciales. Volver a clickearla vuelve a heredar. */}
+        <div>
+          <Label className="text-xs">IVA</Label>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {([10.5, 21] as const).map((rate) => (
+              <Button
+                key={rate}
+                type="button"
+                size="sm"
+                variant={item.ivaRate === rate ? 'default' : 'outline'}
+                className="h-8 px-3 text-xs"
+                onClick={() => updateItem(item.id, { ivaRate: item.ivaRate === rate ? undefined : rate })}
+              >
+                {rate === 10.5 ? '10,5%' : '21%'}
+              </Button>
+            ))}
+            <span className="text-xs text-muted-foreground">
+              {item.ivaRate !== undefined
+                ? 'Alícuota propia de este equipo'
+                : inheritedRate !== null
+                ? `Hereda ${inheritedRate === 10.5 ? '10,5%' : '21%'} de Condiciones Comerciales`
+                : 'Elegí la alícuota acá o en Condiciones Comerciales'}
+            </span>
           </div>
         </div>
 

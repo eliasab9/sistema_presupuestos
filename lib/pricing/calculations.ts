@@ -5,7 +5,14 @@ import {
   CERAMIC_SEAL_COMPACT_PRICE_USD,
   USD_FACTOR,
 } from './data';
-import type { EquipmentType, LaborItem, LaborWorkType, BearingItem, SparePartItem } from '@/types/budget';
+import type {
+  EquipmentType,
+  LaborItem,
+  LaborWorkType,
+  BearingItem,
+  SparePartItem,
+  NewEquipmentIvaRate,
+} from '@/types/budget';
 
 /**
  * Find the closest labor pricing for a given HP
@@ -425,25 +432,66 @@ export function calculateIvaBreakdown(
   return { lines, net, ivaTotal, gross: net + ivaTotal };
 }
 
+/** Lo que el desglose de equipo nuevo necesita de cada ítem. */
+interface IvaNewEquipmentItem {
+  subtotalARS: number;
+  ivaRate?: NewEquipmentIvaRate;
+}
+
+/**
+ * La alícuota del chip de Condiciones Comerciales, que es la que heredan los
+ * equipos sin `ivaRate` propio. `null` si el chip no está elegido.
+ */
+export function defaultNewEquipmentRate(ivaCondition: string | undefined): NewEquipmentIvaRate | null {
+  const mode = resolveIvaMode(ivaCondition);
+  // El modo `split` es de reparación: reparte por tipo de trabajo, no por equipo.
+  if (mode === 'reduced') return 10.5;
+  if (mode === 'general') return 21;
+  return null;
+}
+
 /**
  * Desglose de IVA de un presupuesto de equipo nuevo.
  *
- * Acá hay una sola alícuota: la venta de un equipo no se reparte entre
- * fabricación de bobinado y materiales, así que el modo `split` no aplica y se
- * trata igual que no haber elegido nada.
+ * Un presupuesto puede mezclar alícuotas: cada equipo usa su `ivaRate` y, si no
+ * tiene, la del chip de Condiciones Comerciales. Devuelve una fila por alícuota
+ * efectivamente usada (dos como máximo).
+ *
+ * Devuelve `null` si algún equipo queda sin alícuota — sin el chip elegido no
+ * nos corresponde inventarla, y una tabla parcial no cerraría con el SUBTOTAL.
  */
 export function calculateNewEquipmentIvaBreakdown(
-  net: number,
+  items: IvaNewEquipmentItem[],
   ivaCondition: string | undefined
 ): IvaBreakdown | null {
-  const mode = resolveIvaMode(ivaCondition);
-  if (mode !== 'reduced' && mode !== 'general') return null;
+  const fallback = defaultNewEquipmentRate(ivaCondition);
 
-  const rate = mode === 'reduced' ? IVA_RATE_WINDING : IVA_RATE_GENERAL;
-  const iva = Math.round(net * rate);
-  const label = mode === 'reduced' ? 'Total — 10,5%' : 'Total — 21%';
+  const bases = new Map<NewEquipmentIvaRate, number>();
+  for (const item of items) {
+    const rate = item.ivaRate ?? fallback;
+    if (rate === null) return null;
+    bases.set(rate, (bases.get(rate) ?? 0) + item.subtotalARS);
+  }
+  if (bases.size === 0) return null;
 
-  return { lines: [{ label, base: net, iva }], net, ivaTotal: iva, gross: net + iva };
+  // Una sola alícuota se rotula como el total; con dos hay que distinguirlas.
+  const single = bases.size === 1;
+  const lines: IvaLine[] = [10.5 as const, 21 as const]
+    .filter((rate) => bases.has(rate))
+    .map((rate) => {
+      const base = bases.get(rate)!;
+      const pct = rate === 10.5 ? '10,5%' : '21%';
+      return {
+        label: single ? `Total — ${pct}` : `Equipos al ${pct}`,
+        base,
+        iva: Math.round(base * (rate === 10.5 ? IVA_RATE_WINDING : IVA_RATE_GENERAL)),
+      };
+    });
+
+  const net = lines.reduce((sum, l) => sum + l.base, 0);
+  const ivaTotal = lines.reduce((sum, l) => sum + l.iva, 0);
+
+  return { lines, net, ivaTotal, gross: net + ivaTotal };
 }
 
 /**

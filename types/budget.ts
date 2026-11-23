@@ -578,6 +578,14 @@ export const NEW_EQUIPMENT_TYPE_LABELS: Record<NewEquipmentType, string> = {
   otro: 'Otro',
 };
 
+/**
+ * Alícuota de IVA de un equipo, en porcentaje.
+ *
+ * Un presupuesto puede mezclar equipos al 10,5 % con equipos al 21 %, así que la
+ * alícuota vive en el ítem y no en la cabecera.
+ */
+export type NewEquipmentIvaRate = 10.5 | 21;
+
 // New Equipment item for sales budgets
 export interface NewEquipmentItem {
   id: string;
@@ -588,6 +596,11 @@ export interface NewEquipmentItem {
   quantity: number;
   unitPriceARS: number;
   subtotalARS: number;
+  /**
+   * Alícuota propia del equipo. Sin valor hereda el chip de Condiciones
+   * Comerciales: sólo hay que fijarla cuando este equipo difiere del resto.
+   */
+  ivaRate?: NewEquipmentIvaRate;
   notes?: string;
   
   // Motor eléctrico / Bomba centrífuga fields
